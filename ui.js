@@ -137,6 +137,8 @@ function closePopup() {
 function handleAction(key) {
   // Special multi-step actions handled in UI directly
   if (key === 'circle')         { switchView('people'); renderPeopleView(); return; }
+  if (key === 'save_game')      { if(typeof openSaveSlots==='function') openSaveSlots('save'); return; }
+  if (key === 'load_game')      { if(typeof openSaveSlots==='function') openSaveSlots('load'); return; }
   if (key === 'choose_schooling')  {
     if (G.schooling && G.schooling.type !== 'none') openCurrentSchoolView();
     else openSchoolingChoice();
@@ -225,6 +227,7 @@ function renderStats() {
     <div class="sh-top">
       <span class="sh-name" onclick="devTitleTap()" style="cursor:default">${typeof getTitlePrefix==='function'&&G.title&&G.title.rank>0?getTitlePrefix()+' '+G.name:G.name}</span>
       <span class="sh-meta">${phase}</span>
+      <button class="sh-settings-btn" onclick="openSettingsMenu()" title="Settings">⚙</button>
     </div>
     <div class="bars">
       ${bar('Health', G.health,     '#8b2020')}
@@ -293,6 +296,54 @@ const TABS = {
     { id:'assets',   icon:'🏡', label:'Assets'  },
   ],
 };
+
+
+// ── SETTINGS MENU ──────────────────────────────────────────
+
+function openSettingsMenu() {
+  queuePopup(
+    'Settings',
+    null,
+    [
+      {
+        text: '\u{1F4BE} Save Game',
+        fn() {
+          if (typeof openSaveSlots === 'function') openSaveSlots('save');
+          return null;
+        },
+      },
+      {
+        text: '\u{1F4C2} Load / Switch Life',
+        fn() {
+          if (typeof openSaveSlots === 'function') openSaveSlots('load');
+          return null;
+        },
+      },
+      {
+        text: '\u{1F3E0} Return to Title Screen',
+        fn() {
+          queuePopup(
+            'Return to the title screen? Unsaved progress will be lost.',
+            null,
+            [
+              { text: 'Save first, then return', fn() {
+                if (typeof openSaveSlots === 'function') openSaveSlots('save');
+                return null;
+              }},
+              { text: 'Return without saving', fn() {
+                if (typeof showScreen === 'function') showScreen('s-title');
+                return null;
+              }},
+              { text: 'Stay', fn() { return {}; } },
+            ]
+          );
+          return null;
+        },
+      },
+      { text: 'Close', fn() { return {}; } },
+    ]
+  );
+}
 
 function buildNav() {
   const phase = G.phase === 'childhood' ? 'childhood' : 'adult';
@@ -454,6 +505,7 @@ function getCatConfig(id) {
         { label: 'Circle', items: [
           { key:'circle', icon:'👥', name:'Your Acquaintances', hint: G.npcs.filter(n=>n.introduced).length + ' known' },
         ]},
+
       ],
     };
 

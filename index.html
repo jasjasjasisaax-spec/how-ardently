@@ -10,6 +10,110 @@
   --font-body: 'Palatino Linotype', 'Book Antiqua', Palatino, 'Noto Serif', Georgia, 'Times New Roman', serif;
   --font-sc:   'Palatino Linotype', 'Book Antiqua', Palatino, 'Noto Serif', Georgia, serif;
 }
+
+/* ── SAVE SLOTS MODAL ── */
+#save-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 8000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#save-modal.open { display: flex; }
+.save-modal-inner {
+  background: var(--ink);
+  border: 1px solid var(--gold);
+  width: 100%;
+  max-width: 380px;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 4px;
+}
+.save-modal-hdr {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid rgba(180,134,11,.25);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.save-modal-title {
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--glt);
+}
+.save-slot {
+  padding: 13px 18px;
+  border-bottom: 1px solid rgba(196,168,130,.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.save-slot:active { background: rgba(180,134,11,.1); }
+.save-slot-info { flex: 1; }
+.save-slot-name {
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 14px;
+  color: var(--parch);
+  display: block;
+}
+.save-slot-meta {
+  font-size: 11px;
+  color: var(--sepia);
+  margin-top: 2px;
+  display: block;
+}
+.save-slot.empty .save-slot-name { color: var(--sepia); opacity: .5; }
+.save-slot-del {
+  background: transparent;
+  border: 1px solid rgba(139,32,32,.4);
+  color: #8b2020;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.save-modal-close {
+  background: transparent;
+  border: 1px solid var(--sepia);
+  color: var(--sepia);
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 12px;
+  letter-spacing: 2px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+/* ── SETTINGS BUTTON in stat header ── */
+.sh-settings-btn {
+  background: transparent;
+  border: none;
+  color: var(--sepia);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  opacity: .7;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+.sh-settings-btn:active { opacity: 1; color: var(--gold); }
+/* Make sh-top flex so button sits on the right */
+.sh-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sh-top .sh-name { flex: 1; }
 </style>
 <style>
 :root {
@@ -399,6 +503,110 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
 /* Android touch improvements */
 .cat-view, #view-home { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .act-item, .ch-btn, .ntab, .au-btn, .btn-title, .btn-enter { touch-action: manipulation; }
+
+/* ── SAVE SLOTS MODAL ── */
+#save-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 8000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#save-modal.open { display: flex; }
+.save-modal-inner {
+  background: var(--ink);
+  border: 1px solid var(--gold);
+  width: 100%;
+  max-width: 380px;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 4px;
+}
+.save-modal-hdr {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid rgba(180,134,11,.25);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.save-modal-title {
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--glt);
+}
+.save-slot {
+  padding: 13px 18px;
+  border-bottom: 1px solid rgba(196,168,130,.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.save-slot:active { background: rgba(180,134,11,.1); }
+.save-slot-info { flex: 1; }
+.save-slot-name {
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 14px;
+  color: var(--parch);
+  display: block;
+}
+.save-slot-meta {
+  font-size: 11px;
+  color: var(--sepia);
+  margin-top: 2px;
+  display: block;
+}
+.save-slot.empty .save-slot-name { color: var(--sepia); opacity: .5; }
+.save-slot-del {
+  background: transparent;
+  border: 1px solid rgba(139,32,32,.4);
+  color: #8b2020;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.save-modal-close {
+  background: transparent;
+  border: 1px solid var(--sepia);
+  color: var(--sepia);
+  font-family: 'Palatino Linotype',Georgia,serif;
+  font-variant: small-caps;
+  font-size: 12px;
+  letter-spacing: 2px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+/* ── SETTINGS BUTTON in stat header ── */
+.sh-settings-btn {
+  background: transparent;
+  border: none;
+  color: var(--sepia);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  opacity: .7;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+.sh-settings-btn:active { opacity: 1; color: var(--gold); }
+/* Make sh-top flex so button sits on the right */
+.sh-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sh-top .sh-name { flex: 1; }
 </style>
   <!-- PWA -->
   <link rel="manifest" href="manifest.json">
@@ -418,7 +626,8 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
   <div class="t-rule"></div>
   <div class="t-btns">
     <button class="btn-title" onclick="showScreen('s-create')">Begin Your Story</button>
-    <button class="btn-title secondary" id="btn-continue" style="display:none" onclick="continueGame()">Continue</button>
+    <button class="btn-title secondary" id="btn-continue" style="display:none" onclick="openSaveSlots('load')">Continue</button>
+    <button class="btn-title secondary" id="btn-saves" style="display:none" onclick="openSaveSlots('load')">Saved Lives</button>
   </div>
 </div>
 
@@ -503,9 +712,79 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
   // Wrapped in DOMContentLoaded so every function exists before we call anything
 
   function continueGame() {
-    var btn = document.getElementById('btn-continue');
-    if (btn) btn.textContent = 'Loading…';
-    loadGameAsync().then(function(ok) {
+    openSaveSlots('load');
+  }
+
+  function openSaveSlots(mode) {
+    var modal = document.getElementById('save-modal');
+    var title = document.getElementById('save-modal-title');
+    if (!modal) return;
+    title.textContent = mode === 'save' ? 'Save Your Life' : 'Saved Lives';
+    modal.classList.add('open');
+    renderSaveSlots(mode);
+  }
+
+  function closeSaveModal() {
+    var modal = document.getElementById('save-modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  function renderSaveSlots(mode) {
+    var list = document.getElementById('save-slots-list');
+    if (!list) return;
+    list.innerHTML = '<div style="padding:14px 18px;color:var(--sepia);font-size:13px">Loading saves…</div>';
+
+    getAllSlotsMeta().then(function(slots) {
+      var html = '';
+      for (var i = 0; i < slots.length; i++) {
+        var s = slots[i];
+        if (s.empty) {
+          if (mode === 'save') {
+            html += '<div class="save-slot empty" onclick="doSaveToSlot(' + s.slot + ')">'
+              + '<div class="save-slot-info">'
+              + '<span class="save-slot-name">Empty slot</span>'
+              + '<span class="save-slot-meta">Click to save here</span>'
+              + '</div></div>';
+          } else {
+            html += '<div class="save-slot empty">'
+              + '<div class="save-slot-info">'
+              + '<span class="save-slot-name">Empty slot</span>'
+              + '<span class="save-slot-meta">No save here</span>'
+              + '</div></div>';
+          }
+        } else {
+          var actionAttr = mode === 'save'
+            ? 'onclick="doSaveToSlot(' + s.slot + ')"'
+            : 'onclick="doLoadSlot(' + s.slot + ')"';
+          html += '<div class="save-slot" ' + actionAttr + '>'
+            + '<div class="save-slot-info">'
+            + '<span class="save-slot-name">' + (s.label || s.name) + '</span>'
+            + '<span class="save-slot-meta">'
+              + (s.name || '?') + ' · Age ' + (s.age || '?')
+              + ' · ' + (s.season || '') + ' · ' + (s.saved || '') + '</span>'
+            + '</div>'
+            + (mode === 'load' ? '<button class="save-slot-del" onclick="event.stopPropagation();doDeleteSlot(' + s.slot + ')">✕</button>' : '')
+            + '</div>';
+        }
+      }
+      list.innerHTML = html;
+    }).catch(function() {
+      list.innerHTML = '<div style="padding:14px 18px;color:var(--sepia)">Could not load saves.</div>';
+    });
+  }
+
+  function doSaveToSlot(slot) {
+    if (typeof saveToSlot === 'function') {
+      var label = G && G.name ? G.name + ' — Age ' + G.age : 'Save ' + (slot + 1);
+      saveToSlot(slot, label);
+      closeSaveModal();
+      if (typeof addFeedEntry === 'function') addFeedEntry('Game saved.', 'event');
+    }
+  }
+
+  function doLoadSlot(slot) {
+    loadFromSlot(slot).then(function(ok) {
+      closeSaveModal();
       if (ok) {
         showScreen('s-game');
         currentView = 'home';
@@ -513,13 +792,16 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
         renderStats();
         addFeedEntry('Welcome back, ' + G.name + '.', 'event');
       } else {
-        if (btn) { btn.textContent = 'Continue'; }
-        alert('Save not found. Please begin a new story.');
+        alert('Could not load that save.');
       }
-    }).catch(function(e) {
-      console.error('continueGame error:', e);
-      showScreen('s-create');
     });
+  }
+
+  function doDeleteSlot(slot) {
+    if (confirm('Delete this save? This cannot be undone.')) {
+      deleteSlot(slot);
+      renderSaveSlots('load');
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -532,14 +814,27 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
       // Build the rank selection grid
       if (typeof buildRankGrid === 'function') buildRankGrid();
 
-      // Check for save asynchronously (works on file://, http://, TWA)
-      if (typeof hasSaveAsync === 'function') {
-        hasSaveAsync().then(function(exists) {
-          if (exists) {
-            var btn = document.getElementById('btn-continue');
-            if (btn) btn.style.display = 'block';
+      // Check for saves — show Continue/Saved Lives buttons if any exist
+      if (typeof getAllSlotsMeta === 'function') {
+        getAllSlotsMeta().then(function(slots) {
+          var hasSaves = slots.some(function(s) { return !s.empty; });
+          if (hasSaves) {
+            var btnC = document.getElementById('btn-continue');
+            var btnS = document.getElementById('btn-saves');
+            if (btnC) btnC.style.display = 'block';
+            if (btnS) btnS.style.display = 'none'; // btn-continue covers it
           }
-        }).catch(function() {});
+        }).catch(function() {
+          // Fall back to old hasSaveAsync check
+          if (typeof hasSaveAsync === 'function') {
+            hasSaveAsync().then(function(exists) {
+              if (exists) {
+                var btn = document.getElementById('btn-continue');
+                if (btn) btn.style.display = 'block';
+              }
+            }).catch(function() {});
+          }
+        });
       }
     } catch(e) {
       console.error('Init error:', e);
@@ -556,6 +851,17 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
           <button id="input-modal-cancel" style="flex:1;background:transparent;border:1px solid var(--sepia);color:var(--sepia);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;font-size:14px;letter-spacing:2px;padding:11px;cursor:pointer">Cancel</button>
           <button id="input-modal-confirm" style="flex:2;background:transparent;border:1px solid var(--gold);color:var(--glt);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;font-size:14px;letter-spacing:2px;padding:11px;cursor:pointer">Confirm</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Save Slots Modal -->
+    <div id="save-modal">
+      <div class="save-modal-inner">
+        <div class="save-modal-hdr">
+          <span class="save-modal-title" id="save-modal-title">Saved Lives</span>
+          <button class="save-modal-close" onclick="closeSaveModal()">Close</button>
+        </div>
+        <div id="save-slots-list"></div>
       </div>
     </div>
 </body>

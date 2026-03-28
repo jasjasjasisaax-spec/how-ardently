@@ -478,7 +478,10 @@ function advanceSeason() {
     if (G.schooling && G.phase === 'childhood') {
       changeStat('wit', rand(2, 5));
       changeStat('reputation', rand(1, 3));
-      events.push({ text: `Another year at ${G.schooling}. The education continues relentlessly.`, type: 'good' });
+      const schoolName = G.schooling && G.schooling.name ? G.schooling.name
+                  : G.schooling && G.schooling.type ? G.schooling.type
+                  : 'school';
+      events.push({ text: `Another year at ${schoolName}. The education continues relentlessly.`, type: 'good' });
     }
     // Seasonal health check
     if (rand(1, 10) <= 2) {
@@ -1043,7 +1046,51 @@ function dbHas(key) {
 }
 
 
-const SAVE_KEY = 'how_ardently_v3';
+const SAVE_KEY     = 'how_ardently_v3';
+const MAX_SAVE_SLOTS = 5;
+
+function getSaveSlotKey(slot) { return SAVE_KEY + '_slot_' + slot; }
+
+function saveToSlot(slot, label) {
+  var key  = getSaveSlotKey(slot);
+  var meta = {
+    label:  label || ('Save ' + (slot + 1)),
+    name:   G.name || 'Unknown',
+    age:    G.age  || 0,
+    phase:  G.phase || 'childhood',
+    season: G.season || 'Spring',
+    saved:  new Date().toLocaleDateString(),
+  };
+  dbSet(key,           JSON.stringify(G)).catch(function(){});
+  dbSet(key + '_meta', JSON.stringify(meta)).catch(function(){});
+}
+
+function loadFromSlot(slot) {
+  return dbGet(getSaveSlotKey(slot)).then(function(raw) {
+    if (!raw) return false;
+    try { G = JSON.parse(raw); _memStore[SAVE_KEY] = raw; return true; }
+    catch(e) { return false; }
+  });
+}
+
+function deleteSlot(slot) {
+  dbRemove(getSaveSlotKey(slot)).catch(function(){});
+  dbRemove(getSaveSlotKey(slot) + '_meta').catch(function(){});
+}
+
+function getAllSlotsMeta() {
+  var promises = [];
+  for (var i = 0; i < MAX_SAVE_SLOTS; i++) {
+    promises.push((function(s) {
+      return dbGet(getSaveSlotKey(s) + '_meta').then(function(raw) {
+        if (!raw) return { slot:s, empty:true };
+        try { var m = JSON.parse(raw); m.slot = s; m.empty = false; return m; }
+        catch(e) { return { slot:s, empty:true }; }
+      });
+    })(i));
+  }
+  return Promise.all(promises);
+}
 
 function saveGame() {
   try {

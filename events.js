@@ -532,7 +532,36 @@ const CHILDHOOD_EVENTS = [
     weight: 5,
     execute() {
       const fname = pick(NAMES.female);
+      const lname = pick(NAMES.surname);
       const trait = pick(NPC_TRAITS);
+      changeStat('health', 5);
+      // Save as a childhood NPC friend
+      if (!G.npcs) G.npcs = [];
+      const existing = G.npcs.find(n => n.first === fname && n.last === lname);
+      if (!existing) {
+        G.npcs.push({
+          id:         'childhood_' + fname + '_' + lname,
+          first:      fname,
+          last:       lname,
+          fullName:   fname + ' ' + lname,
+          nick:       fname,
+          title:      'Miss',
+          trait,
+          desc:       getTDESC(trait) || 'a good sort',
+          wealth:     rand(50, 300),
+          gender:     'female',
+          age:        G.age + rand(-2, 2),
+          closeness:  rand(35, 55),
+          approval:   50,
+          faith:      rand(30, 70),
+          introduced: true,
+          isRival:    false,
+          alive:      true,
+          metHow:     'village',
+          isChildhoodFriend: true,
+        });
+        saveGame();
+      }
       return {
         log:   { text:`You make friends with ${fname} from the village.`, type:'good' },
         popup: {
@@ -540,7 +569,6 @@ const CHILDHOOD_EVENTS = [
           badge: 'Health +5',
         },
       };
-      changeStat('health', 5);
     },
   },
 

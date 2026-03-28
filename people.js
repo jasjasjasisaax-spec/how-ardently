@@ -75,6 +75,17 @@ function renderPeopleView() {
     html += peopleRow('👶', G.children.length ? 'Try for another child' : 'Try for a child', 'Start or grow your family', 'action', 'children');
   }
 
+  // ── Childhood friends (village/neighbourhood, shown during childhood) ──
+  const childhoodFriends = G.phase === 'childhood'
+    ? (G.npcs || []).filter(n => n.introduced && n.isChildhoodFriend)
+    : [];
+  if (childhoodFriends.length) {
+    html += peopleSection('Friends');
+    for (const n of childhoodFriends) {
+      html += peopleRow('★', n.fullName, `Village friend · Age ${n.age||'?'}`, 'npc', n.id||n.nick, n.age||null, n.closeness, false);
+    }
+  }
+
   // ── Pets ────────────────────────────────────────────────
   const livePets = (G.pets || []).filter(p => p.alive);
   if (livePets.length) {

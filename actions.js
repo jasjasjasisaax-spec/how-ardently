@@ -1,0 +1,536 @@
+// ═══════════════════════════════════════════════════════════
+// actions.js — All player-initiated actions
+// Each action returns { log?, popup? } for the UI layer
+// ═══════════════════════════════════════════════════════════
+
+// ── ACTION REGISTRY ────────────────────────────────────────
+// Each entry: { id, execute() → { log, popup } }
+
+const ACTIONS = {
+
+  // ══ CHILDHOOD ══════════════════════════════════════════
+
+  study() {
+    const g = rand(3, 8);
+    changeStat('wit', g);
+    const m = pick([
+      'You bent over your books with admirable diligence.',
+      'Greek verbs are not your friend. You persevere regardless.',
+      'Your governess looks almost pleased. Almost.',
+      'Three hours of geography. Your mind improves if not your mood.',
+      'History, mathematics, and a great deal of Latin. You emerge wiser.',
+    ]);
+    return {
+      log:   { text: m + ' Wit +' + g, type: 'good' },
+      popup: { text: m, badge: 'Wit +' + g },
+    };
+  },
+
+  french() {
+    if (rand(1, 10) > 4) {
+      const g = rand(4, 9);
+      changeStat('wit', g);
+      return {
+        log:   { text: 'Très bien! Your French improves.', type: 'good' },
+        popup: { text: 'Très bien! Your accent causes your tutor considerably less pain today.', badge: 'Wit +' + g },
+      };
+    } else {
+      changeStat('wit', 2);
+      return {
+        log:   { text: 'Your French causes your tutor visible distress.' },
+        popup: { text: 'Mon Dieu. Your accent causes your tutor visible suffering. But you improve a little regardless.', badge: 'Wit +2' },
+      };
+    }
+  },
+
+  music() {
+    const g = rand(2, 6);
+    changeStat('wit',   g);
+    changeStat('looks', rand(1, 3));
+    const m = pick([
+      'An hour at the pianoforte. Progress is slow but audible.',
+      'Your fingers begin to find their way. Slowly but surely.',
+      'An excellent lesson — or at least not a terrible one.',
+    ]);
+    return {
+      log:   { text: m, type: 'good' },
+      popup: { text: m, badge: 'Wit +' + g },
+    };
+  },
+
+  drawing() {
+    const g = rand(2, 5);
+    changeStat('looks', g);
+    const m = pick([
+      'Watercolours today. Your tree looks almost like a tree.',
+      'A portrait of the family dog. He looks sceptical.',
+      'Sketching from the window. The light is beautiful today.',
+    ]);
+    return {
+      log:   { text: m, type: 'good' },
+      popup: { text: m, badge: 'Looks +' + g },
+    };
+  },
+
+  play() {
+    const g = rand(4, 9);
+    changeStat('health', g);
+    const m = pick([
+      'A glorious afternoon in the grounds.',
+      'You fell out of a tree. Not badly. The adventure was worth it.',
+      'Racing with the dogs across the south lawn. Pure joy.',
+      'A long walk in the woods. You feel entirely yourself.',
+      'Climbing the old garden wall. Your governess would be horrified.',
+    ]);
+    return {
+      log:   { text: m, type: 'good' },
+      popup: { text: m, badge: 'Health +' + g },
+    };
+  },
+
+  church() {
+    const g = rand(1, 3);
+    changeStat('reputation', g);
+    const m = pick([
+      'A perfectly ordinary Sunday service. You were seen being virtuous.',
+      'The vicar gives a surprisingly interesting sermon today.',
+      'Two hours of sitting very still. Your piety improves.',
+      'You manage to stay awake for the entire sermon. A personal achievement.',
+    ]);
+    return {
+      log:   { text: m },
+      popup: { text: m, badge: 'Reputation +' + g },
+    };
+  },
+
+  riding() {
+    const r = rand(1, 10);
+    const g = rand(3, 7);
+    changeStat('health', g);
+    changeStat('looks', rand(1, 3));
+    if (r >= 7) {
+      return {
+        log:   { text: 'An excellent ride. You are a natural.', type: 'good' },
+        popup: { text: 'An excellent ride. The groom looks genuinely impressed.', badge: 'Health +' + g },
+      };
+    } else if (r >= 3) {
+      return {
+        log:   { text: 'A solid ride. Growing more confident.', type: 'good' },
+        popup: { text: 'A solid lesson. You are growing more confident in the saddle.', badge: 'Health +' + g },
+      };
+    } else {
+      changeStat('health', -5);
+      return {
+        log:   { text: 'You fell off. Twice.', type: 'bad' },
+        popup: { text: 'You fell off. Twice. The horse seemed personally offended by the arrangement.', badge: 'Health -2' },
+      };
+    }
+  },
+
+  governess() {
+    if (G.governess) {
+      return {
+        popup: {
+          text: `${G.governess} is currently in your employ. She is ${pick(['strict and effective','kind and encouraging','thorough if somewhat alarming'])}.`,
+          badge: null,
+          choices: [
+            {
+              text: 'Dismiss her',
+              fn() {
+                const name = G.governess;
+                G.governess = null;
+                return { text: `${name} has departed. The schoolroom is oddly quiet.`, log: 'Governess dismissed.' };
+              },
+            },
+            { text: 'Keep her on', fn() { return {}; } },
+          ],
+        },
+      };
+    }
+    return {
+      popup: {
+        text: 'Several governesses present themselves for your consideration.',
+        badge: null,
+        choices: [
+          {
+            text: 'Miss Sharp — £50/yr (strict, excellent)',
+            fn() {
+              if (G.wealth < 100) return { text: 'Your family cannot presently afford this arrangement.' };
+              G.governess = 'Miss Sharp'; G.wealth -= 50;
+              return { text: 'Miss Sharp arrives with seventeen textbooks and no smile. "We begin immediately." You believe her.', badge: 'Wit +3/yr', log: 'Miss Sharp arrives.' };
+            },
+          },
+          {
+            text: 'Mrs Gentle — £40/yr (kind, arts-focused)',
+            fn() {
+              if (G.wealth < 80) return { text: 'Your family cannot presently afford this arrangement.' };
+              G.governess = 'Mrs Gentle'; G.wealth -= 40;
+              return { text: 'Mrs Gentle arrives with watercolours and sheet music. "We shall have such fun!" You like her immediately.', badge: 'Looks +2/yr', log: 'Mrs Gentle arrives.' };
+            },
+          },
+          {
+            text: 'Mlle Beaumont — £80/yr (exacting, French)',
+            fn() {
+              if (G.wealth < 160) return { text: 'Your family cannot presently afford Mlle Beaumont. She looks unsurprised.' };
+              G.governess = 'Mlle Beaumont'; G.wealth -= 80;
+              return { text: 'Mlle Beaumont sweeps in speaking only French. "Bonjour, mon enfant." You will be fluent within the year. Whether you like it or not.', badge: 'Wit +5/yr', log: 'Mlle Beaumont arrives.' };
+            },
+          },
+          { text: 'Perhaps another time', fn() { return {}; } },
+        ],
+      },
+    };
+  },
+
+  boarding() {
+    if (G.schooling) {
+      return {
+        popup: { text: `You are already enrolled at ${G.schooling}.` },
+      };
+    }
+    const schools = G.gender === 'female'
+      ? [
+          { n: "Miss Pinkerton's Academy", c: 200, wit: 10, looks: 5,  rep: 10 },
+          { n: "Mrs Goddard's School",     c: 100, wit: 5,  rep: 8,   health: 5 },
+        ]
+      : [
+          { n: 'Eton College',  c: 300, wit: 15, rep: 20, health: -5 },
+          { n: 'Rugby School',  c: 250, wit: 12, rep: 10, health: 8  },
+        ];
+    return {
+      popup: {
+        text: 'Your parents discuss the question of schooling.',
+        badge: null,
+        choices: [
+          ...schools.map(s => ({
+            text: `${s.n} — £${s.c}/yr`,
+            fn() {
+              if (G.wealth < s.c) return { text: 'Your family cannot presently afford this.' };
+              G.schooling = s.n; G.wealth -= s.c;
+              if (s.wit)    changeStat('wit',        s.wit);
+              if (s.looks)  changeStat('looks',      s.looks);
+              if (s.rep)    changeStat('reputation', s.rep);
+              if (s.health) changeStat('health',     s.health);
+              return {
+                text:  `You arrive at ${s.n}. You cry the first week. Then you make three excellent friends.`,
+                badge: 'Wit +' + (s.wit || 0),
+                log:   'You are sent to ' + s.n + '.',
+              };
+            },
+          })),
+          { text: 'Stay at home', fn() { return {}; } },
+        ],
+      },
+    };
+  },
+
+  // ══ ADULT — SOCIETY ════════════════════════════════════
+
+  ball() {
+    // Chance to meet eligible suitor (auto-intro, handled after result)
+    if (!G.isMarried && G.age >= 16 && Math.random() < 0.25) {
+      setTimeout(() => {
+        if (typeof generateSuitors !== 'function') return;
+        const newSuitor = generateSuitors(1)[0];
+        if (!newSuitor) return;
+        addFeedEntry('You are introduced to ' + newSuitor.fullName + '.', 'event');
+        queuePopup(
+          `At the ball, you find yourself introduced to ${newSuitor.fullName} — ${newSuitor.rankLabel}, £${newSuitor.wealth.toLocaleString()} per annum. ${(newSuitor.desc||'').charAt(0).toUpperCase()+(newSuitor.desc||'').slice(1)}.`,
+          null,
+          [
+            { text:'Show interest',     fn(){if(typeof addToSuitorPool==='function')addToSuitorPool(newSuitor,'ball');beginCourtship(newSuitor);return null;} },
+            { text:'Note him for later', fn(){if(typeof addToSuitorPool==='function')addToSuitorPool(newSuitor,'ball');saveGame();renderPeopleView&&renderPeopleView();return{};} },
+            { text:'Move on',            fn(){return{};} },
+          ]
+        );
+      }, 800);
+    }
+    const r = rand(1, 10);
+    if (r >= 8) {
+      const g = rand(4, 8); changeStat('reputation', g);
+      return {
+        log:   { text: 'The ball is a triumph.', type: 'good' },
+        popup: { text: 'The ball is a triumph. You move through the room like you were born to it. Several people stare.', badge: 'Reputation +' + g },
+      };
+    } else if (r >= 4) {
+      const g = rand(1, 3); changeStat('reputation', g);
+      return {
+        log:   { text: 'A pleasant evening at the ball.', type: 'good' },
+        popup: { text: 'A pleasant enough evening. You dance twice and have one genuinely interesting conversation.', badge: 'Reputation +' + g },
+      };
+    } else {
+      const d = rand(3, 8); changeStat('reputation', -d); G.scandals++;
+      const mishap = pick([
+        'You address a Duke as Mister. The silence is enormous.',
+        'Your hem tears at the worst possible moment.',
+        'The punch is considerably stronger than expected. The next morning is catastrophic.',
+      ]);
+      return {
+        log:   { text: mishap, type: 'bad' },
+        popup: { text: mishap, badge: 'Reputation -' + d },
+      };
+    }
+  },
+
+  park() {
+    // Chance to encounter eligible person in Hyde Park (Spring only)
+    if (!G.isMarried && G.age >= 16 && G.season === 'Spring' && Math.random() < 0.20) {
+      setTimeout(() => {
+        if (typeof generateSuitors !== 'function') return;
+        const parkSuitor = generateSuitors(1)[0];
+        if (!parkSuitor) return;
+        addFeedEntry('You encounter ' + parkSuitor.fullName + ' in the park.', 'event');
+        queuePopup(
+          `On your promenade you encounter ${parkSuitor.fullName}. ${parkSuitor.rankLabel}, with a ${parkSuitor.courtshipStyle ? parkSuitor.courtshipStyle.label.toLowerCase() : 'agreeable'} manner.`,
+          null,
+          [
+            { text:'Walk with him',           fn(){if(typeof addToSuitorPool==='function')addToSuitorPool(parkSuitor,'park');beginCourtship(parkSuitor);return null;} },
+            { text:'Acknowledge and continue', fn(){if(typeof addToSuitorPool==='function')addToSuitorPool(parkSuitor,'park');saveGame();renderPeopleView&&renderPeopleView();return{};} },
+          ]
+        );
+      }, 800);
+    }
+    const r = rand(1, 10);
+    if (r >= 7) {
+      const g = rand(2, 5); changeStat('reputation', g);
+      const friends = G.npcs.filter(n => n.introduced && !n.isRival);
+      const npc = friends.length ? pick(friends) : null;
+      const txt = npc
+        ? `You encounter ${npc.fullName} in the park. ${npc.desc.charAt(0).toUpperCase() + npc.desc.slice(1)}.`
+        : 'The fashionable world is out in force. You are seen to considerable advantage.';
+      if (npc) changeCloseness(npc, rand(3, 7));
+      return {
+        log:   { text: npc ? 'You encounter ' + npc.nick + ' in the park.' : 'A fine promenade.', type: 'good' },
+        popup: { text: txt, badge: 'Reputation +' + g },
+      };
+    } else if (r >= 4) {
+      const g = rand(2, 4); changeStat('health', g);
+      return {
+        log:   { text: 'A pleasant walk in the park.', type: 'good' },
+        popup: { text: 'A pleasant walk. The fresh air does you genuine good.', badge: 'Health +' + g },
+      };
+    } else {
+      changeStat('health', -3);
+      return {
+        log:   { text: 'It begins to rain. Suddenly.', type: 'bad' },
+        popup: { text: 'It begins to rain without warning. You arrive home entirely soaked and undignified.', badge: 'Health -3' },
+      };
+    }
+  },
+
+  almacks() {
+    if (G.reputation < 50) {
+      return {
+        popup: { text: 'Your reputation is not yet sufficient for Almack\'s. The patronesses have standards, and you have not yet met them.', badge: 'Need: Reputation 50' },
+      };
+    }
+    const r = rand(1, 10);
+    if (r >= 8) {
+      const g = rand(6, 10); changeStat('reputation', g);
+      return {
+        log:   { text: "Almack's — a triumphant evening.", type: 'event' },
+        popup: { text: "Almack's. You pass inspection. You dance. You are approved of. Your mother will dine on this story for a month.", badge: 'Reputation +' + g },
+      };
+    } else if (r >= 4) {
+      const g = rand(3, 6); changeStat('reputation', g);
+      return {
+        log:   { text: "A successful evening at Almack's.", type: 'good' },
+        popup: { text: "You attend Almack's without disgrace. This is higher praise than it sounds.", badge: 'Reputation +' + g },
+      };
+    } else {
+      const d = rand(5, 10); changeStat('reputation', -d);
+      return {
+        log:   { text: "A difficult evening at Almack's.", type: 'bad' },
+        popup: { text: "The patronesses notice something they do not approve of. You are not immediately sure what.", badge: 'Reputation -' + d },
+      };
+    }
+  },
+
+  country() {
+    const g = rand(6, 12); changeStat('health', g);
+    const m = pick([
+      'The countryside is golden and quiet. You rest properly for the first time in months.',
+      'Long walks, early mornings, and no one requiring anything of you. Restorative.',
+      'The harvest is beautiful this year. You read three novels. Excellent.',
+      'Autumn in the country. The air is cold and clean and entirely without obligation.',
+    ]);
+    return {
+      log:   { text: m, type: 'good' },
+      popup: { text: m, badge: 'Health +' + g },
+    };
+  },
+
+  visit() {
+    const g = rand(1, 4); changeStat('reputation', g);
+    const m = pick([
+      'You pay a morning call on the neighbours.',
+      'An afternoon of local calls — tea, gossip, careful observation.',
+      'You call on three households and leave a good impression at all of them.',
+    ]);
+    return {
+      log:   { text: m, type: 'good' },
+      popup: { text: m, badge: 'Reputation +' + g },
+    };
+  },
+
+  letters() {
+    const g = rand(2, 5); changeStat('wit', g);
+    return {
+      log:   { text: 'You compose your correspondence with care.', type: 'good' },
+      popup: { text: 'Several letters — witty, warm, precisely calibrated. An excellent morning\'s work.', badge: 'Wit +' + g },
+    };
+  },
+
+  social() {
+    const known = G.npcs.filter(n => n.introduced && !n.isRival);
+    if (!known.length) {
+      return {
+        popup: { text: 'You have not yet been introduced to anyone of particular note. Attend some social events first.' },
+      };
+    }
+    return {
+      popup: {
+        text: 'Who shall you call upon today?',
+        badge: null,
+        choices: [
+          ...known.map(npc => ({
+            text: `${npc.fullName} — ${closenessLabel(npc.closeness)}`,
+            fn() {
+              const g = rand(5, 12);
+              changeCloseness(npc, g);
+              const msgs = [
+                `A most agreeable afternoon with ${npc.nick}. They are ${npc.desc}.`,
+                `${npc.nick} receives you warmly. You stay two hours longer than intended.`,
+                `${npc.nick} tells you something VERY interesting about the Countess of Pemberton.`,
+                `You and ${npc.nick} walk in the garden and solve the problems of society between you.`,
+              ];
+              return { text: pick(msgs), badge: 'Closeness +' + g, log: 'You visit ' + npc.nick + '.' };
+            },
+          })),
+          { text: 'Perhaps another time', fn() { return {}; } },
+        ],
+      },
+    };
+  },
+
+  // ══ ADULT — SELF ═══════════════════════════════════════
+
+  read() {
+    const g = rand(3, 7); changeStat('wit', g);
+    const book = pick([
+      'three volumes of improving poetry',
+      'a history of Rome (very long)',
+      'a novel discovered behind the encyclopedias',
+      'a French comedy, for educational purposes',
+      'a treatise on the management of estates',
+    ]);
+    return {
+      log:   { text: 'You read ' + book + '.', type: 'good' },
+      popup: { text: 'You make your way through ' + book + '. Your mind improves. Your posture suffers.', badge: 'Wit +' + g },
+    };
+  },
+
+  piano() {
+    const g = rand(2, 5);
+    changeStat('wit',   g);
+    changeStat('looks', rand(1, 3));
+    return {
+      log:   { text: 'An hour at the pianoforte.', type: 'good' },
+      popup: { text: 'Two hours at the pianoforte. You are almost good. Almost.', badge: 'Wit +' + g },
+    };
+  },
+
+  fencing() {
+    const g = rand(3, 6);
+    changeStat('health', g);
+    changeStat('looks',  rand(1, 3));
+    return {
+      log:   { text: 'An hour with the fencing master.', type: 'good' },
+      popup: { text: 'An hour with the fencing master. You are considerably more dangerous than yesterday.', badge: 'Health +' + g },
+    };
+  },
+
+  sketch() {
+    const g = rand(2, 5); changeStat('looks', g);
+    return {
+      log:   { text: 'You spend the morning sketching.', type: 'good' },
+      popup: { text: 'A morning of sketching from the window. Your eye for composition improves considerably.', badge: 'Looks +' + g },
+    };
+  },
+
+  parish() {
+    const g = rand(2, 4); changeStat('reputation', g);
+    return {
+      log:   { text: 'You visit the parish.', type: 'good' },
+      popup: { text: 'Your charitable nature is noted approvingly by several people who matter.', badge: 'Reputation +' + g },
+    };
+  },
+
+  // ══ PERSONAL ═══════════════════════════════════════════
+
+  family() {
+    const people = [
+      G.mother && G.mother.alive ? { label: 'Mother', obj: G.mother } : null,
+      G.father && G.father.alive ? { label: 'Father', obj: G.father } : null,
+      ...G.siblings.filter(s => s.alive).map(s => ({ label: s.name + ' (' + s.gender + ')', obj: s })),
+    ].filter(Boolean);
+
+    if (!people.length) {
+      return { popup: { text: 'Your immediate family is not presently available.' } };
+    }
+
+    return {
+      popup: {
+        text: 'Write a letter home. Who shall you write to?',
+        badge: null,
+        choices: [
+          ...people.map(p => ({
+            text: `${p.label} — ${familyClosenessLabel(p.obj.closeness || 50)}`,
+            fn() {
+              const g = rand(4, 10);
+              changeCloseness(p.obj, g);
+              const replies = [
+                'Your letter is returned with four pages of news and four more of questions.',
+                'A warm reply arrives by next post. You feel considerably better for it.',
+                'The reply is brief but genuinely affectionate.',
+                'They write back at once. The letter smells faintly of home.',
+              ];
+              return { text: pick(replies), badge: 'Closeness +' + g, log: 'You write to ' + p.label + '.' };
+            },
+          })),
+          { text: 'Perhaps another time', fn() { return {}; } },
+        ],
+      },
+    };
+  },
+
+  circle() {
+    const known = G.npcs.filter(n => n.introduced);
+    if (!known.length) {
+      return { popup: { text: 'Your social circle is not yet formed. Attend social events to meet people.' } };
+    }
+    const lines = known.map(n =>
+      `${n.nick} — ${n.isRival ? '⚔ Rival' : closenessLabel(n.closeness)} (${n.closeness})`
+    ).join('\n');
+    return {
+      popup: { text: 'Your acquaintances:\n\n' + lines },
+    };
+  },
+
+  // mart and children are handled separately in ui.js
+  // because they require multi-step flows
+
+};
+
+// ── DISPATCH ───────────────────────────────────────────────
+// Called by UI when a player taps an action
+
+function doAction(key) {
+  if (!ACTIONS[key]) {
+    console.warn('Unknown action:', key);
+    return null;
+  }
+  const result = ACTIONS[key]();
+  saveGame();
+  return result;
+}

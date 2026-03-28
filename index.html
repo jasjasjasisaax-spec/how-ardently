@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>How Ardently</title>
+<style>
+/* Self-contained font stack — no external dependencies, works offline/Android */
+:root {
+  --font-body: 'Palatino Linotype', 'Book Antiqua', Palatino, 'Noto Serif', Georgia, 'Times New Roman', serif;
+  --font-sc:   'Palatino Linotype', 'Book Antiqua', Palatino, 'Noto Serif', Georgia, serif;
+}
+</style>
+<style>
+:root {
+  --ink:   #1a0f07;
+  --ink2:  #241509;
+  --parch: #f5ead6;
+  --aged:  #e8d5b0;
+  --sepia: #c4a882;
+  --brown: #7a4f2d;
+  --gold:  #b8860b;
+  --glt:   #d4a843;
+  --red:   #8b2020;
+  --green: #2d5016;
+  --card:  #fdf6e8;
+  --nav-h: 56px;
+  --au-h:  58px;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif; overflow:hidden; }
+
+/* ── SCREENS ── */
+.screen { display:none; position:fixed; inset:0; flex-direction:column; background:var(--parch); }
+.screen.active { display:flex; }
+
+/* ── TITLE ── */
+#s-title { background:var(--ink); align-items:center; justify-content:center; }
+#s-title::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 38%,#3d1f0a 0%,var(--ink) 68%); }
+.t-orn  { color:var(--gold); font-size:20px; letter-spacing:10px; z-index:1; opacity:.6; margin-bottom:6px; }
+.t-main { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:clamp(44px,12vw,70px); color:var(--glt); letter-spacing:4px; z-index:1; text-align:center; line-height:1; }
+.t-sub  { font-style:italic; font-size:clamp(14px,4vw,19px); color:var(--sepia); z-index:1; letter-spacing:2px; margin-top:8px; }
+.t-rule { width:150px; height:1px; background:linear-gradient(90deg,transparent,var(--gold),transparent); z-index:1; margin:22px 0; }
+.t-btns { z-index:1; display:flex; flex-direction:column; gap:12px; align-items:center; }
+.btn-title { background:transparent; border:1px solid var(--gold); color:var(--glt); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:16px; letter-spacing:3px; padding:13px 42px; cursor:pointer; transition:all .2s; width:220px; }
+.btn-title:active { background:var(--gold); color:var(--ink); }
+.btn-title.secondary { border-color:var(--sepia); color:var(--sepia); font-size:14px; padding:11px 42px; }
+
+/* ── CREATE ── */
+#s-create { background:var(--parch); }
+.cr-hdr { background:var(--ink); padding:15px 18px 13px; text-align:center; flex-shrink:0; }
+.cr-hdr h2 { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; color:var(--glt); font-size:19px; letter-spacing:3px; }
+.cr-hdr p  { color:var(--sepia); font-style:italic; font-size:12px; margin-top:3px; }
+.cr-body { flex:1; overflow-y:auto; padding:18px 16px; display:flex; flex-direction:column; gap:16px; }
+.fl { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:11px; letter-spacing:2px; color:var(--brown); margin-bottom:5px; }
+.fi { width:100%; background:var(--card); border:1px solid var(--sepia); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif; font-size:19px; color:var(--ink); padding:9px 12px; outline:none; border-radius:0; -webkit-appearance:none; }
+.fi:focus { border-color:var(--gold); }
+.grow { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.g-btn { background:var(--card); border:1px solid var(--sepia); padding:13px 8px; text-align:center; cursor:pointer; transition:all .2s; }
+.g-btn .gi { font-size:24px; display:block; margin-bottom:3px; }
+.g-btn .gl { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:12px; letter-spacing:2px; color:var(--brown); }
+.g-btn.sel { background:var(--ink); border-color:var(--gold); }
+.g-btn.sel .gl { color:var(--glt); }
+.rkgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.r-btn { background:var(--card); border:1px solid var(--sepia); padding:10px 8px; cursor:pointer; transition:all .2s; text-align:center; }
+.r-btn .rt { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:12px; letter-spacing:1px; color:var(--brown); }
+.r-btn .ri { font-size:11px; color:var(--sepia); margin-top:2px; font-style:italic; }
+.r-btn.sel { background:var(--ink); border-color:var(--gold); }
+.r-btn.sel .rt { color:var(--glt); }
+.cr-foot { padding:13px 16px; background:var(--aged); border-top:1px solid var(--sepia); flex-shrink:0; }
+.btn-enter { width:100%; background:var(--ink); border:1px solid var(--gold); color:var(--glt); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:16px; letter-spacing:3px; padding:14px; cursor:pointer; transition:all .2s; }
+.btn-enter:active { background:var(--gold); color:var(--ink); }
+.btn-enter:disabled { opacity:.35; cursor:default; }
+
+/* ── GAME SHELL ── */
+#s-game { background:var(--parch); }
+.stat-hdr { background:var(--ink); padding:9px 13px 8px; flex-shrink:0; border-bottom:1px solid rgba(180,134,11,.2); z-index:10; }
+.sh-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+.sh-name { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; color:var(--glt); font-size:18px; letter-spacing:1px; }
+.sh-meta { color:var(--sepia); font-style:italic; font-size:11px; }
+.bars { display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }
+.sb { display:flex; align-items:center; gap:5px; }
+.sb-l { color:var(--sepia); font-size:9px; letter-spacing:1px; font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; width:44px; flex-shrink:0; }
+.sb-t { flex:1; height:4px; background:rgba(255,255,255,.1); border-radius:2px; overflow:hidden; }
+.sb-f { height:100%; border-radius:2px; transition:width .5s; }
+.sb-n { color:var(--sepia); font-size:9px; width:20px; text-align:right; flex-shrink:0; }
+.sh-bot { display:flex; justify-content:space-between; align-items:center; margin-top:5px; padding-top:5px; border-top:1px solid rgba(180,134,11,.12); }
+.wv { color:var(--glt); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:13px; }
+.tb { font-size:9px; letter-spacing:1px; color:var(--sepia); font-style:italic; }
+
+/* ── SWAPPABLE MIDDLE ── */
+.mid { flex:1; overflow:hidden; position:relative; }
+
+/* Home feed */
+#view-home { position:absolute; inset:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:8px 11px; display:flex; flex-direction:column; gap:4px; }
+#view-home::-webkit-scrollbar { width:2px; }
+#view-home::-webkit-scrollbar-thumb { background:var(--sepia); }
+#view-home.active { display:flex; }
+#view-home:not(.active) { display:none; }
+
+.log-entry { background:var(--card); border-left:3px solid var(--sepia); padding:6px 9px; font-size:13px; color:var(--ink); font-style:italic; line-height:1.4; flex-shrink:0; opacity:0; animation:fu .3s forwards; }
+.log-entry.good  { border-left-color:var(--green); }
+.log-entry.bad   { border-left-color:var(--red); }
+.log-entry.event { border-left-color:var(--gold); }
+.yr-banner { background:var(--ink); border:1px solid rgba(180,134,11,.35); padding:6px 10px; text-align:center; flex-shrink:0; }
+.yr-banner span { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; color:var(--glt); font-size:12px; letter-spacing:3px; }
+@keyframes fu { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+
+/* Category views */
+.cat-view { position:absolute; inset:0; overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; flex-direction:column; }
+.cat-view.active { display:flex; }
+.cat-view::-webkit-scrollbar { width:2px; }
+.cat-view::-webkit-scrollbar-thumb { background:var(--sepia); }
+.cat-hdr { background:var(--ink2); padding:12px 14px 10px; flex-shrink:0; border-bottom:1px solid rgba(180,134,11,.25); }
+.cat-hdr-title { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; color:var(--glt); font-size:16px; letter-spacing:3px; }
+.cat-hdr-sub   { color:var(--sepia); font-style:italic; font-size:11px; margin-top:2px; }
+.act-item { display:flex; align-items:center; gap:11px; background:var(--card); border-bottom:1px solid rgba(196,168,130,.25); padding:13px 14px; cursor:pointer; transition:background .15s; -webkit-user-select:none; user-select:none; }
+.act-item:active { background:var(--aged); }
+.act-item.locked { opacity:.38; pointer-events:none; }
+.act-icon { font-size:22px; width:28px; text-align:center; flex-shrink:0; }
+.act-body { flex:1; }
+.act-name { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:13px; letter-spacing:1px; color:var(--ink); display:block; }
+.act-hint { font-size:11px; color:var(--brown); font-style:italic; display:block; margin-top:1px; }
+.act-arr  { color:var(--sepia); font-size:15px; flex-shrink:0; }
+.act-section { background:var(--aged); padding:5px 14px; font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:9px; letter-spacing:3px; color:var(--brown); border-bottom:1px solid rgba(196,168,130,.3); flex-shrink:0; }
+
+/* ── AGE UP BAR ── */
+.au-bar { flex-shrink:0; background:var(--ink); border-top:1px solid rgba(180,134,11,.35); z-index:10; }
+.au-btn { width:100%; height:var(--au-h); background:transparent; border:none; color:var(--glt); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:15px; letter-spacing:3px; cursor:pointer; transition:background .18s; display:flex; align-items:center; justify-content:center; gap:10px; }
+.au-btn:active { background:var(--gold); color:var(--ink); }
+.au-sub { font-size:10px; color:var(--sepia); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif; font-style:italic; letter-spacing:1px; }
+
+/* ── BOTTOM NAV ── */
+.bnav { flex-shrink:0; height:var(--nav-h); background:var(--ink2); border-top:1px solid rgba(180,134,11,.25); display:flex; z-index:10; }
+.ntab { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; border:none; background:transparent; padding:4px 2px; transition:background .15s; -webkit-user-select:none; user-select:none; }
+.ntab:active { background:rgba(180,134,11,.1); }
+.ntab.active { background:rgba(180,134,11,.07); }
+.ntab.active .nl { color:var(--glt); }
+.ntab.active .ni { filter:brightness(1.4); }
+.ni { font-size:17px; line-height:1; }
+.nl { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:9px; letter-spacing:1px; color:var(--sepia); }
+
+/* ── POPUP (bottom sheet) ── */
+.pop-ov { position:fixed; inset:0; background:rgba(26,15,7,.78); display:flex; align-items:flex-end; justify-content:center; z-index:200; opacity:0; pointer-events:none; transition:opacity .2s; }
+.pop-ov.open { opacity:1; pointer-events:all; }
+.pop-card { background:var(--ink); border:1px solid rgba(180,134,11,.55); border-bottom:none; width:100%; max-width:480px; transform:translateY(100%); transition:transform .28s cubic-bezier(.32,.72,0,1); max-height:82dvh; display:flex; flex-direction:column; border-radius:14px 14px 0 0; }
+.pop-ov.open .pop-card { transform:translateY(0); }
+.pop-pill { width:34px; height:4px; background:rgba(180,134,11,.35); border-radius:2px; margin:9px auto 0; flex-shrink:0; }
+.pop-eye  { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:9px; letter-spacing:4px; color:var(--gold); opacity:.6; text-align:center; padding:5px 0 9px; flex-shrink:0; }
+.pop-body { flex:1; overflow-y:auto; padding:2px 20px 14px; }
+.pop-txt  { font-size:clamp(16px,4.5vw,19px); color:var(--parch); line-height:1.65; font-style:italic; text-align:center; }
+.pop-bw   { text-align:center; margin-top:13px; }
+.pop-badge { display:inline-block; padding:5px 16px; font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:12px; letter-spacing:2px; border:1px solid; }
+.pop-badge.pos { border-color:var(--gold); color:var(--glt); }
+.pop-badge.neg { border-color:var(--red); color:#d4504f; }
+.pop-badge.neu { border-color:var(--sepia); color:var(--sepia); }
+.pop-rule { height:1px; background:linear-gradient(90deg,transparent,rgba(180,134,11,.3),transparent); margin:13px 0 0; }
+.pop-choices { padding:0 14px 18px; display:flex; flex-direction:column; gap:7px; flex-shrink:0; }
+.ch-btn { background:rgba(255,255,255,.04); border:1px solid rgba(180,134,11,.22); color:var(--parch); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif; font-size:15px; padding:11px 14px; cursor:pointer; text-align:left; transition:all .15s; line-height:1.35; }
+.ch-btn:active { background:rgba(180,134,11,.16); border-color:var(--gold); }
+.cont-btn { margin:0 14px 18px; background:transparent; border:1px solid var(--gold); color:var(--glt); font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:14px; letter-spacing:3px; padding:13px; cursor:pointer; transition:all .15s; width:calc(100% - 28px); }
+.cont-btn:active { background:var(--gold); color:var(--ink); }
+
+/* ── LIFE SUMMARY SCREEN ── */
+#s-summary { background:var(--ink); flex-direction:column; }
+.sum-scroll { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 0 20px; }
+.sum-scroll::-webkit-scrollbar { width:2px; }
+.sum-scroll::-webkit-scrollbar-thumb { background:rgba(180,134,11,.4); }
+.sum-hdr { text-align:center; padding:36px 24px 24px; border-bottom:1px solid rgba(180,134,11,.25); }
+.sum-orn { color:var(--gold); font-size:18px; letter-spacing:10px; opacity:.5; margin-bottom:10px; }
+.sum-name { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:clamp(28px,8vw,48px); color:var(--glt); letter-spacing:3px; }
+.sum-years { color:var(--sepia); font-style:italic; font-size:14px; margin-top:6px; letter-spacing:1px; }
+.sum-rule { width:120px; height:1px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:20px auto 0; }
+.sum-section { padding:24px 22px 0; }
+.sum-section-label { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:10px; letter-spacing:4px; color:var(--gold); opacity:.6; margin-bottom:12px; }
+.sum-body { font-size:clamp(15px,4vw,17px); color:var(--aged); line-height:1.75; font-style:italic; }
+.sum-reflection { color:var(--sepia); }
+.sum-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:4px; }
+.sum-stat { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; font-size:12px; color:var(--sepia); letter-spacing:1px; padding:6px 0; border-bottom:1px solid rgba(180,134,11,.15); }
+.sum-foot { padding:16px 20px 28px; background:var(--ink); border-top:1px solid rgba(180,134,11,.2); text-align:center; flex-shrink:0; }
+.sum-foot .btn-title { margin:0 auto; display:block; }
+
+
+.people-rel-label {
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--brown);
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 68px;
+  text-align: right;
+}
+
+/* ── PEOPLE TAB: relationship bar in rows ── */
+.people-rel-bar {
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+  background: rgba(255,255,255,.08);
+}
+.people-rel-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .4s;
+}
+
+/* ── PEOPLE TAB ── */
+.act-name {
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+  display: block;
+  font-weight: 400;
+}
+.act-relation {
+  font-size: 10px;
+  color: var(--sepia);
+  font-style: italic;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-top: 1px;
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+}
+/* People rows wrap so the rel-bar sits below the main row */
+.people-row {
+  display: block !important;
+  padding: 10px 14px 8px !important;
+}
+.people-row-inner {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+}
+.people-rel-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0 2px 39px;
+}
+.people-rel-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(0,0,0,.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.people-rel-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .4s ease;
+}
+.people-rel-label {
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--brown);
+  white-space: nowrap;
+  width: 68px;
+  text-align: right;
+  flex-shrink: 0;
+}
+/* People section headers */
+.people-section-label {
+  background: var(--ink);
+  color: var(--gold);
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 10px;
+  letter-spacing: 3px;
+  padding: 6px 14px 5px;
+  border-bottom: 1px solid rgba(180,134,11,.2);
+  flex-shrink: 0;
+  opacity: .85;
+}
+
+/* ── EDUCATION STAT HEADER ── */
+.edu-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(180,134,11,.12);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.edu-hdr-label {
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  opacity: .7;
+}
+.edu-hdr-toggle {
+  font-size: 9px;
+  color: var(--sepia);
+}
+.edu-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  margin-top: 5px;
+}
+
+/* ═══════════════════════════════════════════════════
+   UNIFIED STAT BARS — used in stat header AND popups
+   .pbar works on both dark (popup) and light (header) bg
+═══════════════════════════════════════════════════ */
+.pbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.pbar-lbl {
+  color: var(--sepia);
+  font-size: 9px;
+  letter-spacing: 1px;
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  width: 52px;
+  flex-shrink: 0;
+}
+.pbar-lbl-wide {
+  color: var(--sepia);
+  font-size: 9px;
+  letter-spacing: 1px;
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  width: 80px;
+  flex-shrink: 0;
+}
+.pbar-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.pbar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .4s ease;
+}
+.pbar-val {
+  color: var(--sepia);
+  font-size: 9px;
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.pbar-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(180,134,11,.25), transparent);
+  margin: 8px 0;
+}
+/* Group header within edu detail — gold label */
+.pbar-group-hdr {
+  font-family: 'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--glt);
+  margin: 8px 0 5px;
+  display: block;
+}
+/* Big group bar — slightly taller */
+.pbar.pbar-group .pbar-track {
+  height: 6px;
+}
+.pbar.pbar-group .pbar-lbl {
+  font-size: 10px;
+  width: 60px;
+  color: var(--parch);
+}
+.pbar.pbar-group .pbar-val {
+  font-size: 10px;
+  color: var(--parch);
+}
+/* Sub-stat bars — smaller, indented */
+.pbar.pbar-sub {
+  margin-left: 8px;
+  margin-bottom: 3px;
+}
+.pbar.pbar-sub .pbar-lbl {
+  font-size: 8px;
+  width: 60px;
+  opacity: .85;
+}
+.pbar.pbar-sub .pbar-track {
+  height: 3px;
+}
+.pbar.pbar-sub .pbar-val {
+  font-size: 8px;
+  opacity: .8;
+}
+
+/* Android touch improvements */
+.cat-view, #view-home { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.act-item, .ch-btn, .ntab, .au-btn, .btn-title, .btn-enter { touch-action: manipulation; }
+</style>
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="How Ardently">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a0f07">
+</head>
+<body>
+
+<!-- TITLE -->
+<div id="s-title" class="screen active">
+  <div class="t-orn">✦ ✦ ✦</div>
+  <div class="t-main" onclick="devTitleTap()" style="cursor:default;user-select:none;">How Ardently</div>
+  <div class="t-sub">A Regency Life</div>
+  <div class="t-rule"></div>
+  <div class="t-btns">
+    <button class="btn-title" onclick="showScreen('s-create')">Begin Your Story</button>
+    <button class="btn-title secondary" id="btn-continue" style="display:none" onclick="continueGame()">Continue</button>
+  </div>
+</div>
+
+<!-- CREATE -->
+<div id="s-create" class="screen">
+  <div class="cr-hdr"><h2>Your Character</h2><p>The season is Spring. Your story begins.</p></div>
+  <div class="cr-body">
+    <div>
+      <div class="fl">Your Name</div>
+      <input class="fi" id="inp-name" type="text" placeholder="Enter your name…" maxlength="24" oninput="checkCreate()">
+    </div>
+    <div>
+      <div class="fl">You Are</div>
+      <div class="grow">
+        <div class="g-btn" id="gb-f" onclick="selectGender('female')"><span class="gi">🎀</span><span class="gl">A Lady</span></div>
+        <div class="g-btn" id="gb-m" onclick="selectGender('male')"><span class="gi">⚔</span><span class="gl">A Gentleman</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="fl">Your Family</div>
+      <div class="rkgrid" id="rank-grid"></div>
+    </div>
+  </div>
+  <div class="cr-foot">
+    <button class="btn-enter" id="btn-enter" disabled onclick="beginGame()">Enter Society →</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="s-game" class="screen">
+  <div class="stat-hdr" id="stat-hdr"></div>
+  <div class="mid">
+    <div id="view-home"     class="active"></div>
+    <div id="view-society"  class="cat-view"></div>
+    <div id="view-self"     class="cat-view"></div>
+    <div id="view-personal" class="cat-view"></div>
+    <div id="view-education"class="cat-view"></div>
+    <div id="view-tutors"   class="cat-view"></div>
+    <div id="view-life"     class="cat-view"></div>
+    <div id="view-schooling"class="cat-view"></div>
+    <div id="view-people"   class="cat-view"></div>
+    <div id="view-assets"   class="cat-view"></div>
+  </div>
+  <div class="au-bar">
+    <button class="au-btn" onclick="doAgeUp()">
+      <span id="au-label">⏭  ADVANCE THE SEASON</span>
+      <span class="au-sub" id="au-sub"></span>
+    </button>
+  </div>
+  <nav class="bnav" id="bnav"></nav>
+</div>
+
+<!-- POPUP -->
+<div class="pop-ov" id="pop-ov">
+  <div class="pop-card">
+    <div class="pop-pill"></div>
+    <div class="pop-eye">✦  HOW ARDENTLY  ✦</div>
+    <div class="pop-body" id="pop-body"></div>
+    <div id="pop-foot"></div>
+  </div>
+</div>
+
+<!-- Scripts — order matters -->
+<script src="game.js"></script>
+<script src="events.js"></script>
+<script src="actions.js"></script>
+<script src="assets.js"></script>
+<script src="titles.js"></script>
+<script src="will.js"></script>
+<script src="education.js"></script>
+<script src="debut.js"></script>
+<script src="lessons.js"></script>
+<script src="schoolmates.js"></script>
+<script src="schooling_ui.js"></script>
+<script src="finance.js"></script>
+<script src="pregnancy.js"></script>
+<script src="wedding.js"></script>
+<script src="people.js"></script>
+<script src="ui.js"></script>
+<script>
+  // ── INIT — runs after ALL scripts have loaded ──────────
+  // Wrapped in DOMContentLoaded so every function exists before we call anything
+
+  function continueGame() {
+    var btn = document.getElementById('btn-continue');
+    if (btn) btn.textContent = 'Loading…';
+    loadGameAsync().then(function(ok) {
+      if (ok) {
+        showScreen('s-game');
+        currentView = 'home';
+        buildNav();
+        renderStats();
+        addFeedEntry('Welcome back, ' + G.name + '.', 'event');
+      } else {
+        if (btn) { btn.textContent = 'Continue'; }
+        alert('Save not found. Please begin a new story.');
+      }
+    }).catch(function(e) {
+      console.error('continueGame error:', e);
+      showScreen('s-create');
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    try {
+      // Register service worker for PWA/offline support
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(function() {});
+      }
+
+      // Build the rank selection grid
+      if (typeof buildRankGrid === 'function') buildRankGrid();
+
+      // Check for save asynchronously (works on file://, http://, TWA)
+      if (typeof hasSaveAsync === 'function') {
+        hasSaveAsync().then(function(exists) {
+          if (exists) {
+            var btn = document.getElementById('btn-continue');
+            if (btn) btn.style.display = 'block';
+          }
+        }).catch(function() {});
+      }
+    } catch(e) {
+      console.error('Init error:', e);
+    }
+  });
+</script>
+
+    <!-- In-game text input modal (replaces prompt() for Android compatibility) -->
+    <div id="input-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--ink);border:1px solid var(--gold);padding:24px 20px;width:100%;max-width:360px;border-radius:4px">
+        <p id="input-modal-label" style="font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;color:var(--parch);font-size:16px;margin-bottom:14px;text-align:center"></p>
+        <input id="input-modal-field" type="text" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--sepia);color:var(--parch);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-size:18px;padding:10px 12px;border-radius:3px;margin-bottom:16px;box-sizing:border-box" />
+        <div style="display:flex;gap:10px">
+          <button id="input-modal-cancel" style="flex:1;background:transparent;border:1px solid var(--sepia);color:var(--sepia);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;font-size:14px;letter-spacing:2px;padding:11px;cursor:pointer">Cancel</button>
+          <button id="input-modal-confirm" style="flex:2;background:transparent;border:1px solid var(--gold);color:var(--glt);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps;font-size:14px;letter-spacing:2px;padding:11px;cursor:pointer">Confirm</button>
+        </div>
+      </div>
+    </div>
+</body>
+</html>

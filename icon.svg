@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#1a0f07"/>
+  <!-- Radial glow -->
+  <radialGradient id="g" cx="50%" cy="45%" r="50%">
+    <stop offset="0%" stop-color="#3d1f0a"/>
+    <stop offset="100%" stop-color="#1a0f07"/>
+  </radialGradient>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <!-- Decorative rule top -->
+  <rect x="80" y="120" width="352" height="1" fill="#b8860b" opacity="0.6"/>
+  <!-- H A letters -->
+  <text x="256" y="290" font-family="Georgia,serif" font-size="180" font-style="italic"
+        fill="#d4a843" text-anchor="middle" letter-spacing="-8">HA</text>
+  <!-- Subtitle -->
+  <text x="256" y="340" font-family="Georgia,serif" font-size="28"
+        fill="#c4a882" text-anchor="middle" letter-spacing="6">HOW ARDENTLY</text>
+  <!-- Decorative rule bottom -->
+  <rect x="80" y="370" width="352" height="1" fill="#b8860b" opacity="0.6"/>
+  <!-- Small star decorations -->
+  <text x="180" y="365" font-size="16" fill="#b8860b" text-anchor="middle">✦</text>
+  <text x="256" y="365" font-size="16" fill="#b8860b" text-anchor="middle">✦</text>
+  <text x="332" y="365" font-size="16" fill="#b8860b" text-anchor="middle">✦</text>
+</svg>

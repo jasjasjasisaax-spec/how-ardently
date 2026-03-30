@@ -3120,3 +3120,249 @@ function handleSchoolmateMoment(momentType) {
     }, 300);
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// HOUSEHOLD UI
+// ═══════════════════════════════════════════════════════════
+
+function openHouseholdView() {
+  if (!G.household) {
+    if (typeof initHousehold === 'function') initHousehold();
+    if (!G.household) { queuePopup('Household management becomes available after marriage.'); return; }
+  }
+  const h   = G.household;
+  const sum = typeof getHouseholdSummary === 'function' ? getHouseholdSummary() : null;
+  const tierLabel = h.tier.charAt(0).toUpperCase() + h.tier.slice(1);
+
+  queuePopup(
+    `Your Household\n${tierLabel} · Management ${h.management.total}/100`,
+    null,
+    [
+      { text: '👥 Staff',           fn() { openStaffView();     return null; } },
+      { text: '📒 Account Book',    fn() { openAccountBook();   return null; } },
+      { text: '🍽 Entertaining',    fn() { openEntertainingView(); return null; } },
+      { text: '👶 Nursery',         fn() { openNurseryView();   return null; } },
+      { text: '← Assets',          fn() { renderAssetsView();  return null; } },
+    ]
+  );
+}
+
+// ── STAFF ─────────────────────────────────────────────────
+
+function openStaffView() {
+  if (!G.household) return;
+  const h     = G.household;
+  const avail = typeof getAvailableStaff === 'function' ? getAvailableStaff() : [];
+  const wages = typeof recalcStaffWages  === 'function' ? recalcStaffWages()  : 0;
+
+  queuePopup(
+    `Household Staff\nTotal wages: £${wages}/season`,
+    null,
+    [
+      // Hired staff
+      ...Object.keys(h.staff)
+        .filter(function(r) {
+          return r === 'footmen'
+            ? h.staff.footmen.count > 0
+            : h.staff[r].hired;
+        })
+        .map(function(r) {
+          if (r === 'footmen') {
+            return {
+              text: `${h.staff.footmen.count} Footm${h.staff.footmen.count===1?'an':'en'} · £${h.staff.footmen.count * h.staff.footmen.wage}/yr`,
+              fn() { openStaffProfile(r); return null; },
+            };
+          }
+          const st = h.staff[r];
+          const happy = st.happiness >= 70 ? '😊' : st.happiness >= 40 ? '😐' : '😟';
+          return {
+            text: `${happy} ${st.name} (${r}) · Quality ${st.quality}`,
+            fn() { openStaffProfile(r); return null; },
+          };
+        }),
+      // Hire new staff
+      ...avail
+        .filter(function(r) {
+          return r === 'footmen' ? true : !(h.staff[r] && h.staff[r].hired);
+        })
+        .map(function(r) {
+          const wage = typeof STAFF_WAGES !== 'undefined' && STAFF_WAGES[r]
+            ? STAFF_WAGES[r][h.tier] || 0 : 0;
+          return {
+            text: `+ Hire ${r}${wage ? ' (£' + wage + '/yr)' : ''}`,
+            fn() { doHireStaff(r); return null; },
+          };
+        }),
+      { text: '← Household', fn() { openHouseholdView(); return null; } },
+    ]
+  );
+}
+
+function openStaffProfile(role) {
+  if (!G.household) return;
+  if (role === 'footmen') {
+    const count = G.household.staff.footmen.count;
+    queuePopup(
+      `${count} footm${count===1?'an':'en'} in your service.\n\nThey carry, open doors, and lend the house its proper consequence.`,
+      null,
+      [
+        { text: '+ Engage another', fn() { doHireStaff('footmen'); return null; } },
+        { text: '− Dismiss one',    fn() {
+          const r = typeof dismissStaff==='function' ? dismissStaff('footmen') : null;
+          if (r) queuePopup(r.message);
+          renderAssetsView(); return null;
+        }},
+        { text: '← Staff',         fn() { openStaffView(); return null; } },
+      ]
+    );
+    return;
+  }
+  const st = G.household.staff[role];
+  if (!st || !st.hired) { openStaffView(); return; }
+  const relBar = typeof relationshipBarHTML === 'function'
+    ? relationshipBarHTML(st.happiness, false) : '';
+  const qualBar = typeof pbar === 'function'
+    ? pbar('Quality', st.quality, '#b8860b') : '';
+  queuePopup(
+    `${st.name}\n${role.replace(/([A-Z])/g,' $1').trim()} · £${st.wage}/yr${relBar}${qualBar}`,
+    null,
+    [
+      { text: '👏 Praise her work',  fn() {
+        const r = typeof interactWithStaff==='function' ? interactWithStaff(role,'praise') : null;
+        if (r) queuePopup(r.text, r.badge||null);
+        saveGame(); return null;
+      }},
+      { text: '💰 Give a bonus (£5)', fn() {
+        const r = typeof interactWithStaff==='function' ? interactWithStaff(role,'bonus') : null;
+        if (r) queuePopup(r.text, r.badge||null);
+        renderStats(); saveGame(); return null;
+      }},
+      { text: '📋 Reprimand her',    fn() {
+        const r = typeof interactWithStaff==='function' ? interactWithStaff(role,'reprimand') : null;
+        if (r) queuePopup(r.text, r.badge||null);
+        saveGame(); return null;
+      }},
+      { text: '✕ Dismiss her',       fn() {
+        const r = typeof dismissStaff==='function' ? dismissStaff(role) : null;
+        if (r) { addFeedEntry(r.message, 'event'); queuePopup(r.message); saveGame(); }
+        return null;
+      }},
+      { text: '← Staff',             fn() { openStaffView(); return null; } },
+    ]
+  );
+}
+
+function doHireStaff(role) {
+  if (typeof hireStaff !== 'function') return;
+  const result = hireStaff(role);
+  addFeedEntry(result.message, result.success ? 'good' : 'event');
+  queuePopup(result.message, result.success ? `£${result.wage}/yr` : null);
+  renderStats(); saveGame();
+}
+
+// ── ACCOUNT BOOK ──────────────────────────────────────────
+
+function openAccountBook() {
+  if (!G.household) return;
+  const a    = G.household.accounts;
+  const last = a.history.slice(-8).reverse();
+  const lines = last.length
+    ? last.map(function(e) {
+        return (e.amount >= 0 ? '+' : '') + '£' + Math.abs(e.amount) + ' — ' + e.description;
+      }).join('\n')
+    : 'No entries yet.';
+
+  queuePopup(
+    `Account Book\n\nAllowance: £${a.seasonlyAllowance}/season\nStaff wages: £${a.staffWages}/season\nBalance: £${a.balance}\n\nRecent entries:\n${lines}`,
+    null,
+    [{ text: '← Household', fn() { openHouseholdView(); return null; } }]
+  );
+}
+
+// ── ENTERTAINING ──────────────────────────────────────────
+
+function openEntertainingView() {
+  if (!G.household) return;
+  const e = G.household.entertaining;
+  queuePopup(
+    `Entertaining\n\nMorning calls received: ${e.morningCalls.received}\nDinner parties hosted: ${e.dinnerParties.hosted}\nBalls hosted: ${e.balls.hosted}`,
+    null,
+    [
+      { text: '☕ Receive morning callers', fn() {
+        e.morningCalls.received++;
+        const rep = rand(2,6);
+        changeStat('reputation', rep);
+        addFeedEntry('You receive morning callers.', 'good');
+        queuePopup('The drawing room is pleasantly full for an hour. Several connections are made or maintained.', `Reputation +${rep}`);
+        renderStats(); saveGame(); return null;
+      }},
+      { text: '🍽 Host a dinner party', fn() {
+        if (G.wealth < 30) { queuePopup('You cannot presently afford to entertain at dinner.'); return null; }
+        G.wealth -= 30;
+        e.dinnerParties.hosted++;
+        const rep = rand(4,10);
+        changeStat('reputation', rep);
+        addFeedEntry('You host a dinner party.', 'event');
+        queuePopup('The dinner is a success. Eight covers, two removes, excellent conversation.', `Reputation +${rep}`);
+        renderStats(); saveGame(); return null;
+      }},
+      { text: '🃏 Host a card evening', fn() {
+        if (G.wealth < 10) { queuePopup('You cannot presently afford an evening party.'); return null; }
+        G.wealth -= 10;
+        e.cardEvenings.hosted++;
+        changeStat('reputation', rand(2,5));
+        addFeedEntry('You host an evening of cards.', 'good');
+        queuePopup('A pleasant evening of whist and loo. Nobody loses more than they can afford. Mostly.', 'Reputation +3');
+        renderStats(); saveGame(); return null;
+      }},
+      { text: '← Household', fn() { openHouseholdView(); return null; } },
+    ]
+  );
+}
+
+// ── NURSERY ───────────────────────────────────────────────
+
+function openNurseryView() {
+  if (!G.household) return;
+  const n = G.household.nursery;
+  const childCount = G.children ? G.children.length : 0;
+
+  if (!childCount) {
+    queuePopup('There are no children in the nursery yet.', null,
+      [{ text: '← Household', fn() { openHouseholdView(); return null; } }]);
+    return;
+  }
+
+  queuePopup(
+    `The Nursery\n${childCount} child${childCount!==1?'ren':''}\nWet nurse: ${n.hasWetNurse?'Yes':'No'}\nGoverness: ${n.governessName||'None'}`,
+    null,
+    [
+      ...(!n.hasWetNurse && G.children.some(function(c){ return (c.age||0) < 2; }) ? [{
+        text: '🍼 Engage a wet nurse',
+        fn() {
+          if (G.wealth < 8) { queuePopup('You cannot afford a wet nurse at present.'); return null; }
+          G.wealth -= 8;
+          n.hasWetNurse = true;
+          const name = 'Mrs ' + pick(['Brook','Lane','Field','Heath','Dale']);
+          addFeedEntry(name + ' engaged as wet nurse.', 'good');
+          queuePopup(name + ' is engaged. The infant thrives.', 'Health +5');
+          changeStat('health', 5);
+          renderStats(); saveGame(); return null;
+        },
+      }] : []),
+      ...(!n.governessName && G.children.some(function(c){ return (c.age||0) >= 4; }) ? [{
+        text: '📚 Engage a governess for the children',
+        fn() {
+          if (G.wealth < 20) { queuePopup('You cannot afford a governess at present.'); return null; }
+          G.wealth -= 20;
+          n.governessName = 'Miss ' + pick(['Webb','Sharp','Lane','Hart','Moore']);
+          addFeedEntry(n.governessName + ' engaged as children\'s governess.', 'good');
+          queuePopup(n.governessName + ' arrives. The children regard her with cautious interest.', 'Children\'s education begun');
+          saveGame(); return null;
+        },
+      }] : []),
+      { text: '← Household', fn() { openHouseholdView(); return null; } },
+    ]
+  );
+}

@@ -299,6 +299,7 @@ function newGame(name, gender, rankId) {
     // Tracking
     scandals:    0,
     pets:        [],   // { name, animal, age:0, health:100, alive:true }
+    household:   null, // populated by initHousehold() at marriage
     schoolmates: [],  // generated when boarding/sunday school starts
     timesIll:    0,
     log:         [],     // { text, type } — kept for feed rendering
@@ -501,6 +502,12 @@ function advanceSeason() {
       changeStat('health', -dmg);
       events.push({ text: `A summer cold takes hold. Inconvenient.`, type: 'bad' });
     }
+  }
+
+  // ── Household seasonal update (married female players) ──
+  if (G.isMarried && G.gender === 'female' && typeof householdSeasonalUpdate === 'function') {
+    const hhEvents = householdSeasonalUpdate();
+    if (hhEvents) hhEvents.forEach(function(e) { events.push(e); });
   }
 
   // ── Finance processing (debt interest, investment returns) ──
@@ -748,6 +755,7 @@ function generateSuitors(count = 3) {
 
 function acceptProposal(suitor) {
   G.isMarried        = true;
+  if (typeof initHousehold === 'function') initHousehold();
   G.spouse           = suitor;
   G.spouse.closeness = 65; // start married with a solid relationship
   G.spouse.approval  = 70; // spouse starts approving of you
@@ -777,6 +785,12 @@ function acceptProposal(suitor) {
       });
     }
   }
+}
+
+// Refresh household tier when wealth or assets change
+// Called after inheritances, investments etc.
+function onWealthChange() {
+  if (typeof refreshHouseholdTier === 'function') refreshHouseholdTier();
 }
 
 // ── CHILDREN ───────────────────────────────────────────────

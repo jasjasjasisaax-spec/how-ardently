@@ -22,11 +22,9 @@ const FILES_TO_CACHE = [
   '/finance.js',
   '/pregnancy.js',
   '/wedding.js',
+  '/household.js',
   '/people.js',
   '/ui.js',
-  '/manifest.json',
-  '/icons/launchericon-192x192.png',
-  '/icons/launchericon-512x512.png',
 ];
 
 // Install: cache everything

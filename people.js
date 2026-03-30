@@ -576,6 +576,22 @@ function renderAssetsView() {
   html += `<div class="act-item" data-key="title_view"><span class="act-icon">👑</span><div class="act-body"><span class="act-name">View Title & Standing</span><span class="act-hint">${titleSummaryText().split('\n')[0]}</span></div><span class="act-arr">›</span></div>`;
 
   // Will
+  // Household (married female players)
+  if (G.isMarried && G.gender === 'female' && typeof getHouseholdSummary === 'function') {
+    const hh = getHouseholdSummary();
+    if (hh) {
+      html += `<div class="act-section">Household</div>`;
+      html += `<div class="act-item" data-key="household_view">
+        <span class="act-icon">🏠</span>
+        <div class="act-body">
+          <span class="act-name">Manage Household</span>
+          <span class="act-hint">${hh.tier.charAt(0).toUpperCase()+hh.tier.slice(1)} · ${hh.staffCount} staff · Management ${hh.management}</span>
+        </div>
+        <span class="act-arr">›</span>
+      </div>`;
+    }
+  }
+
   html += `<div class="act-section">Your Will</div>`;
   html += `<div class="act-item" data-key="will_view"><span class="act-icon">📋</span><div class="act-body"><span class="act-name">${G.will && G.will.written ? 'Review Your Will' : 'Write Your Will'}</span><span class="act-hint">${G.will && G.will.written ? willSummaryText().split('\n')[1] || 'Will written' : 'No will yet — law decides'}</span></div><span class="act-arr">›</span></div>`;
 
@@ -607,6 +623,7 @@ function dispatchAssetsClick(key) {
     case 'buy_baronetcy': openBuyBaronetcy();        break;
     case 'title_view':    openTitleView();            break;
     case 'will_view':     openWillView();             break;
+    case 'household_view': openHouseholdView();      break;
   }
 }
 

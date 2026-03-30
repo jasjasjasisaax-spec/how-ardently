@@ -712,7 +712,21 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
   // Wrapped in DOMContentLoaded so every function exists before we call anything
 
   function continueGame() {
-    openSaveSlots('load');
+    // Continue loads the autosave (slot 0) directly
+    var btn = document.getElementById('btn-continue');
+    if (btn) btn.textContent = 'Loading…';
+    loadFromSlot(0).then(function(ok) {
+      if (ok) {
+        showScreen('s-game');
+        currentView = 'home';
+        buildNav();
+        renderStats();
+        addFeedEntry('Welcome back, ' + G.name + '.', 'event');
+      } else {
+        // No autosave — fall back to slot picker
+        openSaveSlots('load');
+      }
+    }).catch(function() { openSaveSlots('load'); });
   }
 
   function openSaveSlots(mode) {
@@ -738,32 +752,46 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
       var html = '';
       for (var i = 0; i < slots.length; i++) {
         var s = slots[i];
+        var isAuto = s.slot === 0;
+        var slotLabel = isAuto ? '* Autosave' : 'Slot ' + s.slot;
+
         if (s.empty) {
-          if (mode === 'save') {
+          if (isAuto) {
+            // Autosave slot always shown, even if empty
+            html += '<div class="save-slot empty">'
+              + '<div class="save-slot-info">'
+              + '<span class="save-slot-name">' + slotLabel + '</span>'
+              + '<span class="save-slot-meta">No autosave yet — play a season to create one</span>'
+              + '</div></div>';
+          } else if (mode === 'save') {
             html += '<div class="save-slot empty" onclick="doSaveToSlot(' + s.slot + ')">'
               + '<div class="save-slot-info">'
-              + '<span class="save-slot-name">Empty slot</span>'
-              + '<span class="save-slot-meta">Click to save here</span>'
+              + '<span class="save-slot-name">' + slotLabel + ' — Empty</span>'
+              + '<span class="save-slot-meta">Tap to save here</span>'
               + '</div></div>';
           } else {
             html += '<div class="save-slot empty">'
               + '<div class="save-slot-info">'
-              + '<span class="save-slot-name">Empty slot</span>'
-              + '<span class="save-slot-meta">No save here</span>'
+              + '<span class="save-slot-name">' + slotLabel + ' — Empty</span>'
               + '</div></div>';
           }
         } else {
-          var actionAttr = mode === 'save'
+          var actionAttr = mode === 'save' && !isAuto
             ? 'onclick="doSaveToSlot(' + s.slot + ')"'
             : 'onclick="doLoadSlot(' + s.slot + ')"';
+          var nameDisplay = isAuto ? (s.name || '?') : (s.label || s.name);
           html += '<div class="save-slot" ' + actionAttr + '>'
             + '<div class="save-slot-info">'
-            + '<span class="save-slot-name">' + (s.label || s.name) + '</span>'
+            + '<span class="save-slot-name">'
+              + (isAuto ? '<em style="color:var(--gold)">* Autosave</em> — ' : '')
+              + nameDisplay + '</span>'
             + '<span class="save-slot-meta">'
               + (s.name || '?') + ' · Age ' + (s.age || '?')
               + ' · ' + (s.season || '') + ' · ' + (s.saved || '') + '</span>'
             + '</div>'
-            + (mode === 'load' ? '<button class="save-slot-del" onclick="event.stopPropagation();doDeleteSlot(' + s.slot + ')">✕</button>' : '')
+            + (!isAuto && mode === 'load'
+              ? '<button class="save-slot-del" onclick="event.stopPropagation();doDeleteSlot(' + s.slot + ')">✕</button>'
+              : '')
             + '</div>';
         }
       }
@@ -812,29 +840,24 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
       }
 
       // Build the rank selection grid
-      if (typeof buildRankGrid === 'function') buildRankGrid();
+      if (typeof buildRankGrid === 'function') {
+        buildRankGrid();
+      }
 
-      // Check for saves — show Continue/Saved Lives buttons if any exist
+      // Check slot 0 (autosave) — show Continue if it exists
       if (typeof getAllSlotsMeta === 'function') {
         getAllSlotsMeta().then(function(slots) {
-          var hasSaves = slots.some(function(s) { return !s.empty; });
-          if (hasSaves) {
+          var autosave = slots[0];
+          var anyManual = slots.slice(1).some(function(s){ return !s.empty; });
+          if (autosave && !autosave.empty) {
             var btnC = document.getElementById('btn-continue');
+            if (btnC) { btnC.style.display = 'block'; btnC.textContent = 'Continue — ' + (autosave.name||'Your Story'); }
+          }
+          if (anyManual) {
             var btnS = document.getElementById('btn-saves');
-            if (btnC) btnC.style.display = 'block';
-            if (btnS) btnS.style.display = 'none'; // btn-continue covers it
+            if (btnS) btnS.style.display = 'block';
           }
-        }).catch(function() {
-          // Fall back to old hasSaveAsync check
-          if (typeof hasSaveAsync === 'function') {
-            hasSaveAsync().then(function(exists) {
-              if (exists) {
-                var btn = document.getElementById('btn-continue');
-                if (btn) btn.style.display = 'block';
-              }
-            }).catch(function() {});
-          }
-        });
+        }).catch(function(){});
       }
     } catch(e) {
       console.error('Init error:', e);

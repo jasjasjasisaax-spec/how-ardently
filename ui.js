@@ -200,13 +200,16 @@ function handleAction(key) {
 function renderStats() {
   const tier   = repTier(G.reputation);
   const phase  = G.phase === 'childhood'
-    ? `Childhood · Age ${G.age}`
+    ? (G.age === 0 ? 'Newborn'
+      : G.age < 2  ? 'Infant · Age ' + G.age
+      : G.age < 4  ? 'Toddler · Age ' + G.age
+      : 'Childhood · Age ' + G.age)
     : `Age ${G.age} · ${G.season}`;
 
 
   // Education stats section (childhood, female, collapsible)
   let eduHtml = '';
-  if (G.phase === 'childhood' && G.gender === 'female' && G.eduStats) {
+  if (G.phase === 'childhood' && G.gender === 'female' && G.eduStats && G.age >= 4) {
     const e = G.eduStats;
     const collapsed = e.collapsed;
     eduHtml = `<div class="edu-hdr" onclick="toggleEduStats()">
@@ -245,8 +248,8 @@ function renderStats() {
   const nextSeason = G.season === 'Spring' ? 'Autumn' : 'Spring';
   document.getElementById('au-label').textContent =
     G.phase === 'childhood'
-      ? '⏭  GROW UP A SEASON'
-      : `⏭  ADVANCE TO ${nextSeason.toUpperCase()}`;
+      ? (G.age < 4 ? '⏭  GROW UP' : '⏭  GROW UP A SEASON')
+      : '⏭  ADVANCE TO ' + nextSeason.toUpperCase();
   document.getElementById('au-sub').textContent =
     G.phase === 'childhood' ? `age ${G.age}` : `currently ${G.season}`;
 }
@@ -567,15 +570,15 @@ function getCatConfig(id) {
     };
 
     case 'life': return {
-      title: 'Life & Health',
+      title: G.age < 2 ? 'Infancy' : G.age < 4 ? 'Early Childhood' : 'Life & Health',
       sub:   `A well-rounded childhood${(G.pets||[]).filter(p=>p.alive).length ? ' · ' + (G.pets||[]).filter(p=>p.alive).length + ' pet(s)' : ''}`,
       sections: [
         { label: 'Play', items: [
-          { key:'play',   icon:'🌳', name:'Play Outside',  hint:'Fresh air and mischief' },
-          { key:'riding', icon:'🏇', name:'Horse Riding',  hint:'In the grounds' },
+          { key:'play',   icon:'🌳', name:'Play Outside',  hint: G.age < 3 ? 'A little young for this' : 'Fresh air and mischief', locked: G.age < 3 },
+          { key:'riding', icon:'🏇', name:'Horse Riding',  hint: G.age < 6 ? 'Not yet' : 'In the grounds',  locked: G.age < 6 },
         ]},
         { label: 'Virtue', items: [
-          { key:'church', icon:'🙏', name:'Sunday Church', hint:'Be seen being good' },
+          { key:'church', icon:'🙏', name:'Sunday Church', hint: G.age < 3 ? 'You sleep through the sermon' : 'Be seen being good', locked: G.age < 3 },
         ]},
         { label: 'Family', items: [
           { key:'family', icon:'👨‍👩‍👧', name:'Spend Time with Family', hint:'Your nearest and dearest' },
@@ -920,6 +923,47 @@ function doAgeUp() {
     if (ev.popup) queuePopup(ev.popup.text, ev.popup.badge || null);
 
     // Phase transitions
+    // Early childhood milestones
+    if (ev.earlyMilestone) {
+      if (ev.earlyMilestone === 'schooling_age') {
+        setTimeout(() => {
+          queuePopup(
+            G.name + ' is four years old. It is time to think about her education.',
+            null,
+            [
+              { text: 'Choose her schooling →', fn() {
+                if (typeof openSchoolingChoice === 'function') openSchoolingChoice();
+                return null;
+              }},
+              { text: 'Later', fn() { return {}; } },
+            ]
+          );
+        }, 500);
+      }
+      if (ev.earlyMilestone === 'full_curriculum') {
+        setTimeout(() => {
+          addFeedEntry('You are ten years old. A whole new world of study opens.', 'event');
+          queuePopup(
+            'You are ten years old. Your studies can now extend beyond the basics — history, languages, dancing, art. The world of accomplishment is before you.',
+            'Full curriculum unlocked'
+          );
+          // Re-open schooling choice so player can upgrade
+          if (G.schooling && G.schooling.type !== 'none') {
+            setTimeout(() => {
+              queuePopup(
+                'Would you like to review your schooling arrangements now that more subjects are available?',
+                null,
+                [
+                  { text: 'Yes, review schooling', fn() { if(typeof openCurrentSchoolView==='function') openCurrentSchoolView(); return null; }},
+                  { text: 'Not now', fn() { return {}; } },
+                ]
+              );
+            }, 800);
+          }
+        }, 500);
+      }
+    }
+
     if (ev.debutNegotiation) {
       setTimeout(() => {
         if (typeof triggerDebutNegotiation === 'function') triggerDebutNegotiation();

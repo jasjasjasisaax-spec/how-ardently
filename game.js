@@ -253,7 +253,7 @@ function newGame(name, gender, rankId) {
     rank: rank.title,
 
     // Age & time (no calendar year shown to player)
-    age:    6,
+    age:    0,
     season: 'Spring',  // 'Spring' | 'Autumn'
 
     // Core stats (0–100)
@@ -543,8 +543,19 @@ function advanceSeason() {
 
   // ── Phase transitions (Spring only) ──
   if (isNewYear) {
+    // ── Early childhood milestones ──────────────────────────
+    // Age 4: schooling choice (first time only)
+    if (G.phase === 'childhood' && G.age === 4 && !G.schoolingOffered) {
+      G.schoolingOffered = true;
+      events.push({ earlyMilestone: 'schooling_age', age: 4 });
+    }
+    // Age 10: full curriculum unlocks
+    if (G.phase === 'childhood' && G.age === 10 && !G.fullCurriculumUnlocked) {
+      G.fullCurriculumUnlocked = true;
+      events.push({ earlyMilestone: 'full_curriculum', age: 10 });
+    }
+    // Age 16+: debut negotiation
     if (G.phase === 'childhood' && G.age >= 16 && !G.debutAge) {
-      // Trigger debut age negotiation
       events.push({ debutNegotiation: true });
     }
     if (G.phase === 'childhood' && G.debutAge && G.age >= G.debutAge && !G.debutDone) {
@@ -607,6 +618,19 @@ function advanceSeason() {
   // ── Pregnancy events ──
   if (G.pregnancy && !G.pregnancy.miscarried) {
     events.push({ pregnancyEvents: true });
+  }
+
+  // ── Infancy events (age 0-3) ──
+  if (G.phase === 'childhood' && G.age < 4) {
+    const infEv = fireInfancyEvent();
+    if (infEv) events.push(infEv);
+    // Age automatically on every season at this age (no player interaction needed)
+  }
+
+  // ── Infancy events (age 0-3) ──
+  if (G.phase === 'childhood' && G.age < 4 && typeof fireInfancyEvent === 'function') {
+    const infEv = fireInfancyEvent();
+    if (infEv) events.push(infEv);
   }
 
   // ── Childhood random event (40%) ──
@@ -1094,7 +1118,22 @@ function getAllSlotsMeta() {
 
 function saveGame() {
   try {
-    dbSet(SAVE_KEY, JSON.stringify(G)).catch(() => {});
+    var data = JSON.stringify(G);
+    dbSet(SAVE_KEY, data).catch(function(){});
+    // Auto-save to slot 0 on every save — always current, no manual saves needed
+    var meta = {
+      label:  'Autosave',
+      name:   G.name  || 'Unknown',
+      age:    G.age   || 0,
+      phase:  G.phase || 'childhood',
+      season: G.season || 'Spring',
+      saved:  new Date().toLocaleDateString(),
+      auto:   true,
+    };
+    if (typeof getSaveSlotKey === 'function') {
+      dbSet(getSaveSlotKey(0), data).catch(function(){});
+      dbSet(getSaveSlotKey(0) + '_meta', JSON.stringify(meta)).catch(function(){});
+    }
   } catch(e) {}
 }
 

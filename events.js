@@ -1127,9 +1127,11 @@ const NPC_EVENTS = [
 ];
 
 // ── UNEXPECTED EXPENSES ──────────────────────────────────────
-// These pull from finance.js UNEXPECTED_EXPENSES array
-
-const EXPENSE_EVENTS = typeof UNEXPECTED_EXPENSES !== 'undefined' ? UNEXPECTED_EXPENSES : [];
+// UNEXPECTED_EXPENSES is defined in finance.js (loaded after events.js)
+// Access lazily via function to avoid initialization order errors
+function getExpenseEvents() {
+  return typeof UNEXPECTED_EXPENSES !== 'undefined' ? UNEXPECTED_EXPENSES : [];
+}
 
 // ── SEASON-AWARE FIRE FUNCTION ─────────────────────────────
 // Replaces the old fireRandomEvent() with season awareness
@@ -1140,7 +1142,7 @@ function fireRandomEvent() {
   const marriagePool = G.isMarried ? MARRIAGE_EVENTS : [];
   const npcPool = G.npcs.length ? NPC_EVENTS : [];
 
-  const expensePool = (typeof UNEXPECTED_EXPENSES !== 'undefined' && Math.random() < 0.3) ? UNEXPECTED_EXPENSES : [];
+  const expensePool = Math.random() < 0.3 ? getExpenseEvents() : [];
   const pool = [
     ...EVENT_REGISTRY,
     ...seasonPool,
@@ -1165,6 +1167,29 @@ function fireRandomEvent() {
 
 // ── CHILDHOOD EVENT FIRE FUNCTION ─────────────────────────
 // Called from advanceSeason() when phase === 'childhood'
+
+// ── INFANCY EVENTS (age 0-3) ───────────────────────────────
+const INFANCY_EVENTS = [
+  { text:'You are ill for a week. Your mother barely sleeps. You recover completely and remember none of it.', health:-5 },
+  { text:'You take your first steps. Your mother cries. Your father claps once, gruffly, which is equivalent.', health:3 },
+  { text:'You say your first word. There is considerable debate about what the word was.', wit:2 },
+  { text:'You fall down the stairs. You are entirely unhurt and find it very funny. Your mother does not.', health:-3 },
+  { text:'You follow the dog everywhere for a month. The dog is tolerant about it.', health:4 },
+  { text:'You discover that you can make people laugh by making a certain face. You do this constantly.', wit:2 },
+  { text:'You are given a doll. You name it something unsuitable. You love it absolutely.', health:3 },
+  { text:'You refuse to eat anything that is not bread for three weeks. Everyone is baffled.', health:-2 },
+  { text:'You hide in the garden for an afternoon. You are not found until supper. You consider this a triumph.', health:3 },
+];
+
+function fireInfancyEvent() {
+  if (!G._seenInfancy) G._seenInfancy = [];
+  const unseen = INFANCY_EVENTS.filter(e => !G._seenInfancy.includes(e.text));
+  const ev = unseen.length ? pick(unseen) : pick(INFANCY_EVENTS);
+  G._seenInfancy = G._seenInfancy.concat([ev.text]).slice(-INFANCY_EVENTS.length);
+  if (ev.health) changeStat('health', ev.health);
+  if (ev.wit)    changeStat('wit', ev.wit);
+  return { log: { text: ev.text, type: (ev.health && ev.health < 0) ? 'bad' : 'good' }, popup: { text: ev.text } };
+}
 
 function fireChildhoodEvent() {
   const eligible = CHILDHOOD_EVENTS.filter(e => {

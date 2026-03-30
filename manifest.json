@@ -2,11 +2,13 @@
   "name": "How Ardently",
   "short_name": "How Ardently",
   "description": "A Regency life simulator",
+  "id": "/how-ardently/",
   "start_url": "/how-ardently/",
   "display": "standalone",
   "background_color": "#1a0f07",
   "theme_color": "#1a0f07",
   "orientation": "portrait",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icons/launchericon-192x192.png",

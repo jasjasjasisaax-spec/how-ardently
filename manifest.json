@@ -11,6 +11,9 @@
   "prefer_related_applications": false,
   "display_override": ["window-controls-overlay", "standalone"],
   "scope": "/how-ardently/",
+  "launch_handler": {
+  "client_mode": "focus-existing"
+}
   "icons": [
     {
       "src": "icons/launchericon-192x192.png",

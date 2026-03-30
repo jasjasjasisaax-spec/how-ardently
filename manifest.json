@@ -9,6 +9,8 @@
   "theme_color": "#1a0f07",
   "orientation": "portrait",
   "prefer_related_applications": false,
+  "display_override": ["window-controls-overlay", "standalone"],
+  "scope": "/how-ardently/",
   "icons": [
     {
       "src": "icons/launchericon-192x192.png",

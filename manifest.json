@@ -13,8 +13,8 @@
   "scope": "/how-ardently/",
   "launch_handler": {
   "client_mode": "focus-existing"
-}
-  "icons": [
+},
+"icons": [
     {
       "src": "icons/launchericon-192x192.png",
       "sizes": "192x192",

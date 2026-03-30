@@ -24,6 +24,9 @@ const FILES_TO_CACHE = [
   '/wedding.js',
   '/people.js',
   '/ui.js',
+  '/manifest.json',
+  '/icons/launchericon-192x192.png',
+  '/icons/launchericon-512x512.png',
 ];
 
 // Install: cache everything

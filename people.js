@@ -629,119 +629,152 @@ function dispatchAssetsClick(key) {
 
 // ── ASSET PROFILE ──────────────────────────────────────────
 function openAssetProfile(asset) {
-  const repairResult = repairAsset; // just reference
-  const incomeText = asset.rentedOut
-    ? `Rented out · £${asset.rentalIncome}/season`
-    : `Income £${asset.income || 0}/season · Upkeep £${asset.upkeep || 0}/season`;
+  var incomeText = asset.rentedOut
+    ? 'Rented out · £' + (asset.rentalIncome||0) + '/season'
+    : 'Income £' + (asset.baseIncome||asset.income||0) + '/season · Upkeep £' + (asset.upkeep||0) + '/season';
 
-  const availableImprovements = (ASSET_CATALOGUE.improvements && !asset.rentedOut)
-    ? Object.entries(ASSET_CATALOGUE.improvements)
-        .filter(([id]) => !asset.improvements.includes(id))
-        .slice(0, 4)
-    : [];
+  var isEstate    = asset.type === 'estate';
+  var isJewellery = asset.type === 'jewellery';
+
+  // Improvements: possible ones minus already done
+  var possibleImprovements  = asset.improvements || [];
+  var doneImprovements      = asset.improvements_done || [];
+  var remainingImprovements = possibleImprovements.filter(function(id) {
+    return !doneImprovements.includes(id);
+  });
+  var canImprove = isEstate && remainingImprovements.length > 0 && !asset.rentedOut;
+
+  var doneNames = doneImprovements.map(function(id) {
+    return ASSET_CATALOGUE.improvements[id] ? ASSET_CATALOGUE.improvements[id].name : id;
+  });
+
+  var repairCost = Math.floor((100 - (asset.condition||100)) * (asset.upkeep||20) * 0.5);
 
   queuePopup(
-    `${asset.name}\n\nCondition: ${asset.condition}/100\nValue: £${asset.currentValue.toLocaleString()}\n${incomeText}${asset.improvements.length ? '\nImprovements: ' + asset.improvements.join(', ') : ''}`,
+    asset.name
+      + '\n\nCondition: ' + (asset.condition||100) + '/100'
+      + '\nValue: £' + (asset.currentValue||0).toLocaleString()
+      + '\n' + incomeText
+      + (doneNames.length ? '\nImprovements: ' + doneNames.join(', ') : ''),
     null,
     [
-      ...(!asset.rentedOut ? [{
-        text: `🔧 Repair (£${Math.floor((100-asset.condition) * (asset.upkeep||20) * 0.5)})`,
+      ...(!isJewellery && (asset.condition||100) < 100 ? [{
+        text: 'Repair (£' + repairCost + ')',
         fn() {
-          const r = repairAsset(asset);
+          var r = repairAsset(asset);
           if (r.success) {
             addFeedEntry(asset.name + ' repaired.', 'good');
-            queuePopup(`${asset.name} is fully restored. Cost: £${r.cost}.`, `Condition 100`);
+            queuePopup(asset.name + ' is fully restored. Cost: £' + r.cost + '.', 'Condition 100');
           } else {
-            queuePopup(`You cannot afford the repairs. £${r.cost} required.`);
+            queuePopup('You cannot afford the repairs. £' + r.cost + ' required.');
           }
           renderStats(); saveGame();
-          setTimeout(() => renderAssetsView(), 200);
+          setTimeout(function(){ openAssetProfile(asset); }, 200);
           return null;
         },
       }] : []),
-      ...(!asset.rentedOut ? [{
-        text: '💰 Rent it out',
+      ...(isEstate && !asset.rentedOut ? [{
+        text: 'Rent it out',
         fn() {
-          const r = rentOutAsset(asset);
+          var r = rentOutAsset(asset);
           addFeedEntry(asset.name + ' rented out.', 'good');
-          queuePopup(`${asset.name} is rented out at £${r.rentalIncome}/season. You will not be able to use it yourself.`, `Income +£${r.rentalIncome}`);
+          queuePopup(asset.name + ' is rented out at £' + r.rentalIncome + '/season.', 'Income +£' + r.rentalIncome);
           renderStats(); saveGame();
-          setTimeout(() => renderAssetsView(), 200);
+          setTimeout(function(){ openAssetProfile(asset); }, 200);
           return null;
         },
-      }] : [{
-        text: '🏠 Stop renting out',
+      }] : isEstate && asset.rentedOut ? [{
+        text: 'Stop renting out',
         fn() {
           stopRenting(asset);
           addFeedEntry(asset.name + ' — tenants departed.', 'event');
-          queuePopup(`${asset.name} is yours again.`);
-          setTimeout(() => renderAssetsView(), 200);
+          queuePopup(asset.name + ' is yours again.');
+          setTimeout(function(){ openAssetProfile(asset); }, 200);
           return null;
         },
-      }]),
-      ...(availableImprovements.length ? [{
-        text: '🏗 Add an improvement',
+      }] : []),
+      ...(canImprove ? [{
+        text: 'Add an improvement (' + remainingImprovements.length + ' available)',
         fn() { openImprovementMenu(asset); return null; },
       }] : []),
-      ...(asset.type === 'jewellery' ? [{
-        text: '🎁 Gift to someone',
+      ...(isJewellery ? [{
+        text: 'Gift to someone',
         fn() { openGiftJewelleryMenu(asset); return null; },
       }] : []),
       {
-        text: `💷 Sell (£${Math.floor(asset.currentValue * (asset.condition/100) * 0.8).toLocaleString()})`,
+        text: 'Sell (£' + Math.floor((asset.currentValue||0) * ((asset.condition||100)/100) * 0.8).toLocaleString() + ')',
         fn() {
-          queuePopup(
-            `Sell ${asset.name} for £${Math.floor(asset.currentValue * (asset.condition/100) * 0.8).toLocaleString()}? This cannot be undone.`,
-            null,
-            [
-              { text: 'Yes — sell', fn() {
-                const r = sellAsset(asset);
-                addFeedEntry(asset.name + ' sold for £' + r.salePrice.toLocaleString() + '.', 'good');
-                queuePopup(`${asset.name} sold for £${r.salePrice.toLocaleString()}.`, `+£${r.salePrice.toLocaleString()}`);
-                renderStats(); saveGame();
-                setTimeout(() => renderAssetsView(), 200);
-                return null;
-              }},
-              { text: 'No — keep it', fn() { openAssetProfile(asset); return null; } },
-            ]
-          );
+          var salePrice = Math.floor((asset.currentValue||0) * ((asset.condition||100)/100) * 0.8);
+          queuePopup('Sell ' + asset.name + ' for £' + salePrice.toLocaleString() + '? This cannot be undone.', null, [
+            { text: 'Yes — sell', fn() {
+              var r = sellAsset(asset);
+              addFeedEntry(asset.name + ' sold for £' + r.salePrice.toLocaleString() + '.', 'good');
+              queuePopup(asset.name + ' sold for £' + r.salePrice.toLocaleString() + '.', '+£' + r.salePrice.toLocaleString());
+              renderStats(); saveGame();
+              setTimeout(function(){ if(typeof switchView==='function'){switchView('household');renderCatView('household');} }, 200);
+              return null;
+            }},
+            { text: 'No — keep it', fn() { openAssetProfile(asset); return null; } },
+          ]);
           return null;
         },
       },
-      {
-        text: '📋 Add to will',
-        fn() { openBequestMenu(asset); return null; },
-      },
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: 'Add to will', fn() { openBequestMenu(asset); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
 
 // ── IMPROVEMENT MENU ───────────────────────────────────────
 function openImprovementMenu(asset) {
-  const available = Object.entries(ASSET_CATALOGUE.improvements)
-    .filter(([id]) => !asset.improvements.includes(id));
+  // Only show improvements listed for this specific asset type
+  const allowed = asset.improvements || [];
+  if (!allowed.length) {
+    queuePopup(asset.name + ' cannot be improved further.');
+    return;
+  }
+
+  const available = allowed
+    .filter(function(id) { return !asset.improvements_done || !asset.improvements_done.includes(id); })
+    .map(function(id) { return [id, ASSET_CATALOGUE.improvements[id]]; })
+    .filter(function(pair) { return pair[1]; }); // skip any missing definitions
+
+  if (!available.length) {
+    queuePopup('All improvements to ' + asset.name + ' have already been made.');
+    return;
+  }
 
   queuePopup(
-    `Add an improvement to ${asset.name}:`,
+    'Improvements for ' + asset.name + ':',
     null,
     [
-      ...available.map(([id, imp]) => ({
-        text: `${imp.name} — £${imp.price} (income +£${imp.incomeBonus||0}, upkeep +£${imp.upkeepBonus||0})`,
-        fn() {
-          const r = addImprovement(asset, id);
-          if (r.success) {
+      ...available.map(function(pair) {
+        var id = pair[0], imp = pair[1];
+        var canAfford = G.wealth >= imp.price;
+        return {
+          text: imp.name + ' \u2014 \u00a3' + imp.price.toLocaleString()
+            + (imp.incomeBonus ? ' (income +\u00a3' + imp.incomeBonus + ')' : '')
+            + (imp.repBonus    ? ' (rep +' + imp.repBonus + ')'             : '')
+            + (!canAfford ? ' \u2014 cannot afford' : ''),
+          fn() {
+            if (!canAfford) { queuePopup('You cannot presently afford this improvement.'); return null; }
+            // Mark improvement done on the asset instance
+            if (!asset.improvements_done) asset.improvements_done = [];
+            asset.improvements_done.push(id);
+            G.wealth -= imp.price;
+            if (imp.incomeBonus) asset.baseIncome = (asset.baseIncome||0) + imp.incomeBonus;
+            if (imp.upkeepBonus) asset.upkeep     = (asset.upkeep||0)     + imp.upkeepBonus;
+            if (imp.repBonus)    changeStat('reputation', imp.repBonus);
+            asset.currentValue = Math.round((asset.currentValue||asset.price||0) * 1.15);
             addFeedEntry(imp.name + ' added to ' + asset.name + '.', 'good');
-            queuePopup(`${imp.name} is complete. ${imp.desc}`, `Value +15%`);
+            queuePopup(imp.name + ' is complete. ' + imp.desc, '\u00a3' + imp.price.toLocaleString() + ' spent');
             renderStats(); saveGame();
-            setTimeout(() => renderAssetsView(), 200);
-          } else if (r.reason === 'insufficient_funds') {
-            queuePopup('You cannot presently afford this improvement.');
-          }
-          return null;
-        },
-      })),
-      { text: '← Back', fn() { openAssetProfile(asset); return null; } },
+            setTimeout(function(){ openAssetProfile(asset); }, 200);
+            return null;
+          },
+        };
+      }),
+      { text: '\u2190 Back', fn() { openAssetProfile(asset); return null; } },
     ]
   );
 }
@@ -772,7 +805,7 @@ function openBuyMenu(category) {
                   addFeedEntry(t.name + ' acquired.', 'event');
                   queuePopup(`${t.name} is yours. ${t.desc}`, `£${t.price.toLocaleString()} spent`);
                   renderStats(); saveGame();
-                  setTimeout(() => renderAssetsView(), 200);
+                  setTimeout(function(){ if(typeof switchView==='function'){switchView('household');renderCatView('household');} }, 200);
                 }
                 return null;
               }},
@@ -782,7 +815,7 @@ function openBuyMenu(category) {
           return null;
         },
       })),
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -814,7 +847,7 @@ function openGiftJewelleryMenu(asset) {
             `Closeness +18`
           );
           renderStats(); saveGame();
-          setTimeout(() => renderAssetsView(), 200);
+          setTimeout(function(){ if(typeof switchView==='function'){switchView('household');renderCatView('household');} }, 200);
           return null;
         },
       })),
@@ -833,7 +866,7 @@ function openWillView() {
       { text: '👤 Set principal heir', fn() { openHeirMenu(heirs); return null; } },
       { text: '🏡 Assign specific bequests', fn() { openBequestListMenu(); return null; } },
       { text: '💷 Divide wealth between heirs', fn() { openWealthSplitMenu(heirs); return null; } },
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -930,7 +963,7 @@ function openTitleView() {
         text: `Purchase a Baronetcy (£3,000)`,
         fn() { openBuyBaronetcy(); return null; },
       }] : []),
-      { text: '← Back', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -944,7 +977,7 @@ function openBuyBaronetcy() {
       'Title: Baronet'
     );
     renderStats(); saveGame();
-    setTimeout(() => renderAssetsView(), 200);
+    setTimeout(function(){ if(typeof switchView==='function'){switchView('household');renderCatView('household');} }, 200);
   } else if (r.reason === 'insufficient_funds') {
     queuePopup(`A baronetcy costs £${r.cost.toLocaleString()}. You have £${G.wealth.toLocaleString()}.`);
   } else if (r.reason === 'already_titled') {
@@ -1000,7 +1033,7 @@ function openInvestmentMenu() {
           return null;
         },
       }] : []),
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -1008,7 +1041,7 @@ function openInvestmentMenu() {
 function openDebtMenu() {
   const debts = G.debts || [];
   if (!debts.length) {
-    queuePopup('You have no outstanding debts. A most enviable position.', null, null, ()=>renderAssetsView());
+    queuePopup('You have no outstanding debts. A most enviable position.');
     return;
   }
   queuePopup(
@@ -1029,7 +1062,7 @@ function openDebtMenu() {
           return null;
         },
       })),
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -1057,7 +1090,7 @@ function openBorrowMenu() {
           }); return null;
         },
       })),
-      { text: '← Assets', fn() { renderAssetsView(); return null; } },
+      { text: '← Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }

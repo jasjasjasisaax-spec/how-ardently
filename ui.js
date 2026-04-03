@@ -138,6 +138,33 @@ function handleAction(key) {
   // Special multi-step actions handled in UI directly
   if (key === 'circle')         { switchView('people'); renderPeopleView(); return; }
   if (key === 'save_game')      { if(typeof openSaveSlots==='function') openSaveSlots('save'); return; }
+  if (key === 'hh_staff')        { renderHouseholdStaffView(); return; }
+  if (key === 'hh_accounts')     { openAccountBook();          return; }
+  if (key === 'hh_entertaining') { openEntertainingView();     return; }
+  if (key === 'hh_nursery')      { openNurseryView();          return; }
+  if (key === 'hh_none')         { return; }
+  if (key === 'assets_view') {
+    // Show owned assets then buy options by category
+    var choices = [];
+    if (G.assets && G.assets.length) {
+      G.assets.forEach(function(a) {
+        choices.push({ text: a.name + ' — £' + (a.currentValue||0).toLocaleString() + ' · ' + a.type,
+          fn() { if(typeof openAssetProfile==='function') openAssetProfile(a); return null; } });
+      });
+    }
+    choices.push({ text: '+ Buy an estate',    fn() { if(typeof openBuyMenu==='function') openBuyMenu('estates');   return null; } });
+    choices.push({ text: '+ Buy a carriage',   fn() { if(typeof openBuyMenu==='function') openBuyMenu('carriages'); return null; } });
+    choices.push({ text: '+ Buy a horse',      fn() { if(typeof openBuyMenu==='function') openBuyMenu('horses');    return null; } });
+    choices.push({ text: '+ Buy jewellery',    fn() { if(typeof openBuyMenu==='function') openBuyMenu('jewellery'); return null; } });
+    choices.push({ text: '← Household', fn() { switchView('household'); renderCatView('household'); return null; } });
+    queuePopup(G.assets && G.assets.length ? 'Your Property & Assets' : 'You own no property yet.', null, choices);
+    return;
+  }
+  if (key.startsWith('asset_')) { var a=(G.assets||[]).find(function(x){return 'asset_'+x.instanceId===key;}); if(a&&typeof openAssetProfile==='function')openAssetProfile(a); return; }
+  if (key === 'invest_view')     { if(typeof openInvestmentMenu==='function') openInvestmentMenu(); return; }
+  if (key === 'debt_view')       { if(typeof openDebtMenu==='function') openDebtMenu(); return; }
+  if (key === 'will_view')       { if(typeof openWillView==='function') openWillView(); return; }
+  if (key.startsWith('career_')) { openCareerDetail(key.replace('career_','')); return; }
   if (key === 'load_game')      { if(typeof openSaveSlots==='function') openSaveSlots('load'); return; }
   if (key === 'choose_schooling')  {
     if (G.schooling && G.schooling.type !== 'none') openCurrentSchoolView();
@@ -156,7 +183,32 @@ function handleAction(key) {
   if (key === 'view_schoolmates')  { openSchoolmatesView();    return; }
   if (key === 'family')   { switchView('people'); renderPeopleView(); return; }
   if (key === 'mart')     { openMarriageMart(); return; }
-  if (key === 'hostball') { if(typeof openBallPlanning==='function') openBallPlanning(); return; }
+  if (key === 'hostball') {
+    var hh = G.household;
+    var hasCook = hh && hh.staff && hh.staff.cook && hh.staff.cook.hired;
+    var hasHK   = hh && hh.staff && hh.staff.housekeeper && hh.staff.housekeeper.hired;
+    if (!hasCook || !hasHK) {
+      queuePopup(
+        'To host a ball you need at minimum a cook and a housekeeper.'
+          + (!hasCook ? '\nNo cook engaged.' : '')
+          + (!hasHK   ? '\nNo housekeeper engaged.' : ''),
+        null,
+        [
+          { text: 'Hire staff first', fn() { renderHouseholdStaffView(); return null; } },
+          { text: 'Host anyway (it will not go well)', fn() {
+            changeStat('reputation', -rand(10,20));
+            addFeedEntry('The ball was ill-prepared. People will remember.', 'bad');
+            queuePopup('The ball is a disaster. The food is inadequate, the house in disarray.', 'Reputation -15');
+            renderStats(); saveGame(); return null;
+          }},
+          { text: 'Cancel', fn() { return {}; } },
+        ]
+      );
+    } else {
+      if(typeof openBallPlanning==='function') openBallPlanning();
+    }
+    return;
+  }
   if (key === 'children') { openChildrenMenu(); return; }
 
   const result = doAction(key);
@@ -292,14 +344,33 @@ const TABS = {
     { id:'people',    icon:'👥', label:'People'    },
   ],
   adult: [
-    { id:'home',     icon:'🏠', label:'Home'    },
-    { id:'society',  icon:'🎵', label:'Society' },
-    { id:'self',     icon:'📚', label:'Self'    },
-    { id:'people',   icon:'👥', label:'People'  },
-    { id:'assets',   icon:'🏡', label:'Assets'  },
+    { id:'home',       icon:'🏠', label:'Home'       },
+    { id:'society',    icon:'🎵', label:'Society'    },
+    { id:'activities', icon:'📖', label:'Activities' },
+    { id:'household',  icon:'🏡', label:'Household'  },
+    { id:'people',     icon:'👥', label:'People'     },
   ],
 };
 
+
+// ── HOUSEHOLD HINT HELPERS ────────────────────────────────
+
+function householdStaffHint() {
+  if (!G.household) return 'Manage your staff';
+  var h = G.household;
+  var hiredCount = Object.keys(h.staff).filter(function(r) {
+    return r === 'footmen' ? h.staff.footmen.count > 0 : h.staff[r].hired;
+  }).length;
+  var wages = typeof recalcStaffWages === 'function' ? recalcStaffWages() : 0;
+  return hiredCount + ' staff · £' + wages + '/season';
+}
+
+function householdAccountHint() {
+  if (!G.household) return 'Household finances';
+  var a = G.household.accounts;
+  var bal = a.balance || 0;
+  return 'Balance: £' + bal + ' · Allowance: £' + (a.seasonlyAllowance || 0) + '/season';
+}
 
 // ── SETTINGS MENU ──────────────────────────────────────────
 
@@ -364,6 +435,7 @@ function buildNav() {
 }
 
 function switchView(id) {
+  console.log('[switchView] called with:', id);
   currentView = id;
 
   // Update nav highlights
@@ -372,7 +444,7 @@ function switchView(id) {
   );
 
   // Show/hide views
-  const allViews = ['home','society','self','personal','education','tutors','schooling','life','people','assets'];
+  const allViews = ['home','society','self','life','activities','household','personal','education','tutors','schooling','people','assets'];
   allViews.forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.classList.toggle('active', v === id);
@@ -383,8 +455,12 @@ function switchView(id) {
   if (auBar) auBar.style.display = id === 'home' ? 'block' : 'none';
 
   // Populate category if needed
-  if (id === 'people') { renderPeopleView(); return; }
-  if (id === 'assets') { renderAssetsView(); return; }
+  if (id === 'people')     { renderPeopleView();          return; }
+  if (id === 'assets')     { renderAssetsView();          return; }
+  if (id === 'life')       { renderLifeView();            return; }
+  if (id === 'society')    { renderCatView('society');    return; }
+  if (id === 'activities') { renderCatView('activities'); return; }
+  if (id === 'household')  { renderCatView('household');  return; }
   if (id !== 'home') renderCatView(id);
 
 }
@@ -392,11 +468,15 @@ function switchView(id) {
 // ── CATEGORY VIEW BUILDER ──────────────────────────────────
 
 function renderCatView(id) {
+  console.log('[renderCatView] called with id:', id);
   const el = document.getElementById('view-' + id);
-  if (!el) return;
+  console.log('[renderCatView] el found:', !!el);
+  if (!el) { console.error('[renderCatView] NO ELEMENT for view-' + id); return; }
 
-  const cfg = getCatConfig(id);
-  if (!cfg) return;
+  let cfg;
+  try { cfg = getCatConfig(id); } catch(e) { console.error('[renderCatView] getCatConfig threw:', e); return; }
+  console.log('[renderCatView] cfg:', cfg ? 'OK, sections=' + cfg.sections.length : 'NULL');
+  if (!cfg) { console.error('[renderCatView] getCatConfig returned null for', id); return; }
 
   let html = `<div class="cat-hdr">
     <div class="cat-hdr-title">${cfg.title}</div>
@@ -468,23 +548,101 @@ function getCatConfig(id) {
       ],
     };
 
-    case 'self': return {
-      title: 'Self Improvement',
+    case 'activities': return {
+      title: 'Activities',
       sub:   'Your mind, your health, your accomplishments',
       sections: [
         { label: 'Mind', items: [
-          { key:'read',    icon:'📚', name:'Read Books',   hint: 'Expand your mind considerably' },
-          { key:'letters', icon:'✒',  name:'Write Letters', hint: 'Wit exercised by correspondence' },
+          { key:'read',    icon:'\u{1F4DA}', name:'Read Books',       hint:'Expand your mind considerably' },
+          { key:'letters', icon:'\u270C',    name:'Write Letters',    hint:'Wit exercised by correspondence' },
         ]},
         { label: 'Accomplishments', items: [
           G.gender === 'female'
-            ? { key:'piano', icon:'🎹', name:'Pianoforte', hint: 'Practise your instrument' }
-            : { key:'fencing', icon:'🤺', name:'Fencing',  hint: 'With the fencing master' },
-          { key:'sketch', icon:'🎨', name:'Sketching', hint: 'Watercolours and composition' },
+            ? { key:'piano',   icon:'\u{1F3B9}', name:'Pianoforte', hint:'Practise your instrument' }
+            : { key:'fencing', icon:'\u{1F93A}', name:'Fencing',    hint:'With the fencing master' },
+          { key:'sketch',  icon:'\u{1F3A8}', name:'Sketching',        hint:'Watercolours and composition' },
         ]},
         { label: 'Virtue', items: [
-          { key:'parish', icon:'🙏', name:'Visit the Parish', hint: 'Be charitable and be seen to be' },
+          { key:'parish',  icon:'\u{1F64F}', name:'Visit the Parish', hint:'Be charitable and be seen to be' },
         ]},
+      ],
+    };
+
+    case 'household': return {
+      title: 'Household',
+      sub: (function() {
+        if (!G.household) return 'Your domestic life';
+        var tierDescs = {
+          humble:      'Humble establishment \u00b7 one servant',
+          modest:      'Modest establishment \u00b7 small staff',
+          comfortable: 'Comfortable establishment \u00b7 a proper household',
+          wealthy:     'Wealthy establishment \u00b7 full staff',
+          grand:       'Grand establishment \u00b7 a house of consequence',
+        };
+        return tierDescs[G.household.tier] || G.household.tier;
+      })(),
+      sections: [
+        ...(G.isMarried && G.gender === 'female' && G.household ? [
+          { label: 'Staff & Management', items: [
+            { key:'hh_staff',        icon:'\u{1F465}', name:'Staff',        hint: householdStaffHint() },
+            { key:'hh_accounts',     icon:'\u{1F4D2}', name:'Account Book', hint: householdAccountHint() },
+            { key:'hh_entertaining', icon:'\u{1F37D}', name:'Entertaining', hint:'Morning calls, dinners, card parties' },
+            { key:'hh_nursery',      icon:'\u{1F476}', name:'Nursery',      hint: G.children && G.children.length ? G.children.length + ' child(ren)' : 'No children yet', locked: !G.children || !G.children.length },
+          ]},
+        ] : [{ label: 'Household', items: [
+          { key:'hh_none', icon:'\u{1F3E1}', name:'No household yet', hint:'Available after marriage', locked: true },
+        ]}]),
+        { label: 'Assets & Property', items: [
+          // Each owned asset as its own tappable row
+          ...((G.assets && G.assets.length) ? G.assets.map(function(a) {
+            var icon = a.type==='estate'    ? '\u{1F3E0}'
+                     : a.type==='carriage'  ? '\u{1F4BA}'
+                     : a.type==='horse'     ? '\u{1F40E}'
+                     : a.type==='jewellery' ? '\u{1F48E}'
+                     : '\u{1F4BC}';
+            var hint = '\u00a3' + (a.currentValue||0).toLocaleString() + ' \u00b7 Condition ' + (a.condition||100)
+                     + (a.rentedOut ? ' \u00b7 Rented out' : '');
+            return { key:'asset_' + a.instanceId, icon:icon, name:a.name, hint:hint };
+          }) : [{ key:'assets_view', icon:'\u{1F3E0}', name:'No property yet', hint:'Tap to browse and buy', locked:false }]),
+          // Buy more / manage
+          { key:'assets_view', icon:'+', name:'Buy Property', hint:'Estates, carriages, horses, jewellery' },
+          { key:'invest_view', icon:'\u{1F4B0}', name:'Investments', hint: G.investments && G.investments.length ? G.investments.length + ' active' : 'None yet' },
+          { key:'debt_view',   icon:'\u{1F4DC}', name:'Debts',       hint: G.debts && G.debts.length ? G.debts.length + ' outstanding' : 'No debts', locked: !G.debts || !G.debts.length },
+          { key:'will_view',   icon:'\u{1F4CB}', name: G.will && G.will.written ? 'Review Will' : 'Write Your Will', hint: G.will && G.will.written ? 'Will written' : 'No will yet' },
+        ]},
+        ...(G.gender === 'female' && !G.isMarried && typeof getAvailableCareers === 'function' ? (function() { try { var c = getAvailableCareers(); return c && c.length ? [{ label: 'Career', items: c.slice(0,4).map(function(x){ return { key:'career_'+x.id, icon:'\u{1F4BC}', name:x.name, hint:x.desc }; }) }] : []; } catch(e) { return []; } })() : []),
+      ],
+    };
+
+    case 'self':
+    case 'life': return {
+      title: 'Life',
+      sub:   G.isMarried && G.gender === 'female' ? 'Your household, your mind, your ambitions' : 'Your mind, your health, your accomplishments',
+      sections: [
+        { label: 'Mind & Accomplishments', items: [
+          { key:'read',    icon:'📚', name:'Read Books',       hint:'Expand your mind considerably' },
+          { key:'letters', icon:'✒',  name:'Write Letters',    hint:'Wit exercised by correspondence' },
+          G.gender === 'female'
+            ? { key:'piano',   icon:'🎹', name:'Pianoforte',   hint:'Practise your instrument' }
+            : { key:'fencing', icon:'🤺', name:'Fencing',      hint:'With the fencing master' },
+          { key:'sketch',  icon:'🎨', name:'Sketching',        hint:'Watercolours and composition' },
+          { key:'parish',  icon:'🙏', name:'Visit the Parish', hint:'Be charitable and be seen to be' },
+        ]},
+        ...(G.isMarried && G.gender === 'female' && G.household ? [{
+          label: 'Household',
+          items: [
+            { key:'hh_staff',       icon:'👥', name:'Staff',         hint: householdStaffHint() },
+            { key:'hh_accounts',    icon:'📒', name:'Account Book',  hint: householdAccountHint() },
+            { key:'hh_entertaining',icon:'🍽', name:'Entertaining',  hint:'Morning calls, dinners, card parties' },
+            { key:'hh_nursery',     icon:'👶', name:'Nursery',       hint: G.children && G.children.length ? G.children.length + ' child(ren)' : 'No children yet', locked: !G.children || !G.children.length },
+          ],
+        }] : []),
+        ...(!G.isMarried && G.phase !== 'childhood' && G.gender === 'female' && typeof getAvailableCareers === 'function' && getAvailableCareers().length ? [{
+          label: 'Career',
+          items: getAvailableCareers().slice(0,4).map(function(c) {
+            return { key:'career_' + c.id, icon:'💼', name:c.name, hint:c.desc };
+          }),
+        }] : []),
       ],
     };
 
@@ -920,7 +1078,7 @@ function doAgeUp() {
   // Process events from advanceSeason()
   for (const ev of result.events) {
     if (ev.text) addFeedEntry(ev.text, ev.type || '');
-    if (ev.popup) queuePopup(ev.popup.text, ev.popup.badge || null);
+    if (ev.popup) queuePopup(ev.popup.text, ev.popup.badge || null, ev.popup.choices || null);
 
     // Phase transitions
     // Early childhood milestones
@@ -2550,7 +2708,7 @@ function devJumpPhase() {
   queuePopup('Jump to which life phase?', null, [
     { text: '🧒 Childhood (age 8)',   fn() { G.phase='childhood'; G.age=8;  G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to childhood.','event'); queuePopup('Jumped to childhood, age 8.', null, null, ()=>devJumpPhase()); return null; } },
     { text: '🌸 Debut (age 16)',      fn() { G.phase='debut';     G.age=16; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to debut.','event');    queuePopup('Jumped to debut, age 16.',    null, null, ()=>devJumpPhase()); return null; } },
-    { text: '👤 Adult (age 20)',      fn() { G.phase='adult';     G.age=20; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to adult.','event');    queuePopup('Jumped to adult, age 20.',    null, null, ()=>devJumpPhase()); return null; } },
+    { text: 'Adult (age 20)',      fn() { G.phase='adult';     G.age=20; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to adult.','event');    queuePopup('Jumped to adult, age 20.',    null, null, ()=>devJumpPhase()); return null; } },
     { text: '👴 Elder (age 60)',      fn() { G.phase='elder';     G.age=60; G.season='Autumn'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to elder.','event');    queuePopup('Jumped to elder, age 60.',    null, null, ()=>devJumpPhase()); return null; } },
     { text: '🔢 Set age manually',    fn() {
       const v = prompt('Set age to:', G.age);
@@ -3265,18 +3423,68 @@ function doHireStaff(role) {
 
 function openAccountBook() {
   if (!G.household) return;
-  const a    = G.household.accounts;
-  const last = a.history.slice(-8).reverse();
-  const lines = last.length
+  var a      = G.household.accounts;
+  var wages  = typeof recalcStaffWages === 'function' ? recalcStaffWages() : 0;
+  var bal    = a.balance || 0;
+  var allow  = a.seasonlyAllowance || 0;
+  var hubAllow = a.husbandAllowance || allow;
+  var balColour = bal >= 0 ? '' : ' (deficit)';
+
+  var last = a.history.slice(-8).reverse();
+  var lines = last.length
     ? last.map(function(e) {
-        return (e.amount >= 0 ? '+' : '') + '£' + Math.abs(e.amount) + ' — ' + e.description;
+        return (e.amount >= 0 ? '+' : '') + '\u00a3' + Math.abs(e.amount) + ' \u2014 ' + e.description;
       }).join('\n')
     : 'No entries yet.';
 
+  var surplus = allow - wages;
+  var surplusText = surplus >= 0
+    ? '\u00a3' + surplus + ' surplus this season'
+    : '\u00a3' + Math.abs(surplus) + ' shortfall this season';
+
   queuePopup(
-    `Account Book\n\nAllowance: £${a.seasonlyAllowance}/season\nStaff wages: £${a.staffWages}/season\nBalance: £${a.balance}\n\nRecent entries:\n${lines}`,
+    'Account Book'
+      + '\n\nHusband\'s allowance: \u00a3' + hubAllow + '/season'
+      + '\nYour personal wealth: \u00a3' + (G.wealth||0).toLocaleString()
+      + '\nStaff wages: \u00a3' + wages + '/season'
+      + '\nBalance: \u00a3' + bal + balColour
+      + '\n' + surplusText
+      + '\n\nRecent entries:\n' + lines,
     null,
-    [{ text: '← Household', fn() { openHouseholdView(); return null; } }]
+    [
+      {
+        text: 'Add personal funds to household budget',
+        fn() {
+          if (!G.wealth || G.wealth <= 0) {
+            queuePopup('You have no personal funds to contribute.');
+            return null;
+          }
+          // Offer amounts based on what player can afford
+          var opts = [10,25,50,100,200].filter(function(x){ return G.wealth >= x; });
+          if (!opts.length) { queuePopup('You cannot afford to contribute anything.'); return null; }
+          queuePopup(
+            'How much will you add from your personal funds?\nYour wealth: \u00a3' + G.wealth.toLocaleString(),
+            null,
+            opts.map(function(amt) {
+              return {
+                text: '\u00a3' + amt,
+                fn() {
+                  var ok = typeof topUpHouseholdBudget === 'function' && topUpHouseholdBudget(amt);
+                  if (ok) {
+                    addFeedEntry('You add \u00a3' + amt + ' to the household accounts.', 'good');
+                    queuePopup('You transfer \u00a3' + amt + ' into the household accounts. The books look a little healthier.', '+\u00a3' + amt);
+                    renderStats(); saveGame();
+                  }
+                  return null;
+                },
+              };
+            }).concat([{ text: 'Cancel', fn() { openAccountBook(); return null; } }])
+          );
+          return null;
+        },
+      },
+      { text: '\u2190 Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
+    ]
   );
 }
 
@@ -3284,39 +3492,94 @@ function openAccountBook() {
 
 function openEntertainingView() {
   if (!G.household) return;
-  const e = G.household.entertaining;
+  var e     = G.household.entertaining;
+  var staff = G.household.staff;
+  var hasCook       = staff.cook       && staff.cook.hired;
+  var hasHousekeeper= staff.housekeeper&& staff.housekeeper.hired;
+  var hasButler     = staff.butler     && staff.butler.hired;
+  var cookQuality   = hasCook ? (staff.cook.quality || 60) : 0;
+  var hkQuality     = hasHousekeeper ? (staff.housekeeper.quality || 60) : 0;
+
   queuePopup(
-    `Entertaining\n\nMorning calls received: ${e.morningCalls.received}\nDinner parties hosted: ${e.dinnerParties.hosted}\nBalls hosted: ${e.balls.hosted}`,
+    'Entertaining'
+      + '\nMorning calls received: ' + (e.morningCalls.received||0)
+      + '\nDinner parties hosted: '  + (e.dinnerParties.hosted||0)
+      + '\nBalls hosted: '           + (e.balls.hosted||0)
+      + (!hasCook ? '\n\nNote: no cook engaged — entertaining will suffer.' : ''),
     null,
     [
-      { text: '☕ Receive morning callers', fn() {
-        e.morningCalls.received++;
-        const rep = rand(2,6);
-        changeStat('reputation', rep);
-        addFeedEntry('You receive morning callers.', 'good');
-        queuePopup('The drawing room is pleasantly full for an hour. Several connections are made or maintained.', `Reputation +${rep}`);
-        renderStats(); saveGame(); return null;
-      }},
-      { text: '🍽 Host a dinner party', fn() {
-        if (G.wealth < 30) { queuePopup('You cannot presently afford to entertain at dinner.'); return null; }
-        G.wealth -= 30;
-        e.dinnerParties.hosted++;
-        const rep = rand(4,10);
-        changeStat('reputation', rep);
-        addFeedEntry('You host a dinner party.', 'event');
-        queuePopup('The dinner is a success. Eight covers, two removes, excellent conversation.', `Reputation +${rep}`);
-        renderStats(); saveGame(); return null;
-      }},
-      { text: '🃏 Host a card evening', fn() {
-        if (G.wealth < 10) { queuePopup('You cannot presently afford an evening party.'); return null; }
-        G.wealth -= 10;
-        e.cardEvenings.hosted++;
-        changeStat('reputation', rand(2,5));
-        addFeedEntry('You host an evening of cards.', 'good');
-        queuePopup('A pleasant evening of whist and loo. Nobody loses more than they can afford. Mostly.', 'Reputation +3');
-        renderStats(); saveGame(); return null;
-      }},
-      { text: '← Household', fn() { openHouseholdView(); return null; } },
+      {
+        text: 'Receive morning callers',
+        fn() {
+          e.morningCalls.received = (e.morningCalls.received||0) + 1;
+          // Housekeeper quality affects how smoothly it runs
+          var rep = rand(2,5) + (hasHousekeeper ? Math.floor(hkQuality/25) : 0);
+          changeStat('reputation', rep);
+          addFeedEntry('You receive morning callers.', 'good');
+          var outcome = hasHousekeeper
+            ? 'The drawing room is well-ordered. Refreshments are perfectly judged. Several connections are made.'
+            : 'The morning calls go pleasantly enough, though the tea was not quite right and you cannot work out why.';
+          queuePopup(outcome, 'Reputation +' + rep);
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Host a dinner party'
+          + (hasCook ? ' (\u00a330)' : ' \u2014 no cook hired'),
+        fn() {
+          if (!hasCook) {
+            queuePopup(
+              'You cannot host a proper dinner without a cook. The attempt would be a social disaster.',
+              null,
+              [
+                { text: 'Hire a cook first', fn() { renderHouseholdStaffView(); return null; } },
+                { text: 'Cancel', fn() { openEntertainingView(); return null; } },
+              ]
+            );
+            return null;
+          }
+          if (G.wealth < 30) { queuePopup('You cannot presently afford to entertain at dinner.'); return null; }
+          G.wealth -= 30;
+          e.dinnerParties.hosted = (e.dinnerParties.hosted||0) + 1;
+          // Outcome depends on cook + housekeeper quality
+          var combined = (cookQuality + (hasHousekeeper ? hkQuality : 30)) / 2;
+          var rep, outcome;
+          if (combined >= 75) {
+            rep = rand(8, 14);
+            outcome = 'The dinner is a triumph. The food is excellent, the table immaculate, the conversation brilliant. '
+              + (staff.cook.name||'Your cook') + ' has excelled herself.';
+          } else if (combined >= 50) {
+            rep = rand(4, 8);
+            outcome = 'A pleasant dinner. Nothing remarkable, but nothing amiss. Your guests leave satisfied.';
+          } else {
+            rep = rand(1, 4);
+            changeStat('reputation', -rand(2, 5)); // bad cooking overshadows the rep gain
+            outcome = 'The dinner is not a success. The food is disappointing and the household somewhat disordered. '
+              + 'You smile through it but the evening is noted.';
+          }
+          changeStat('reputation', rep);
+          addFeedEntry('You host a dinner party.', 'event');
+          queuePopup(outcome, 'Reputation +' + rep);
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Host a card evening (\u00a310)',
+        fn() {
+          if (G.wealth < 10) { queuePopup('You cannot presently afford an evening party.'); return null; }
+          G.wealth -= 10;
+          e.cardEvenings = (e.cardEvenings||0) + 1;
+          var rep = rand(2,5) + (hasButler ? 2 : 0);
+          changeStat('reputation', rep);
+          addFeedEntry('You host an evening of cards.', 'good');
+          var outcome = hasButler
+            ? 'An elegant evening. ' + (staff.butler.name||'Your butler') + ' manages the room with perfect composure.'
+            : 'A pleasant evening of whist and loo. Nobody loses more than they can afford. Mostly.';
+          queuePopup(outcome, 'Reputation +' + rep);
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '\u2190 Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } },
     ]
   );
 }
@@ -3365,4 +3628,202 @@ function openNurseryView() {
       { text: '← Household', fn() { openHouseholdView(); return null; } },
     ]
   );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// LIFE TAB — renderLifeView
+// The Life tab is a proper scrollable view (not cat-view)
+// when household is active; otherwise falls through to
+// renderCatView('life') for the standard action list.
+// ═══════════════════════════════════════════════════════════
+
+function renderLifeView() {
+  // If married female with household — show household view inline
+  // Otherwise fall back to the category action list
+  var el = document.getElementById('view-life');
+  if (!el) { renderCatView('life'); return; }
+  renderCatView('life');
+}
+
+// ═══════════════════════════════════════════════════════════
+// HOUSEHOLD STAFF VIEW — proper scrollable page
+// ═══════════════════════════════════════════════════════════
+
+function renderHouseholdStaffView() {
+  if (!G.household) { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return; }
+
+  var h     = G.household;
+  var wages = typeof recalcStaffWages === 'function' ? recalcStaffWages() : 0;
+  var bal   = h.accounts.balance || 0;
+  var allow = h.accounts.seasonlyAllowance || 0;
+
+  var roleLabels = {
+    housekeeper:"Housekeeper", cook:"Cook", ladysMaid:"Lady's Maid",
+    butler:"Butler", nursemaid:"Nursemaid", wetNurse:"Wet Nurse",
+    governess:"Governess", coachman:"Coachman", footmen:"Footmen",
+  };
+
+  var ALL_ROLES = ['housekeeper','cook','ladysMaid','butler','nursemaid',
+                   'wetNurse','governess','coachman','footmen'];
+
+  var balStr = (bal >= 0 ? '' : '-') + '\u00a3' + Math.abs(bal);
+  var header = 'Household Staff'
+    + '\nAllowance: \u00a3' + allow + '/season'
+    + '  \u00b7  Wages: \u00a3' + wages + '/season'
+    + '  \u00b7  Balance: ' + balStr;
+
+  var choices = [];
+
+  // ── Currently hired ──
+  var hiredAny = false;
+  ALL_ROLES.forEach(function(r) {
+    var isHired = r === 'footmen'
+      ? h.staff.footmen.count > 0
+      : h.staff[r] && h.staff[r].hired;
+    if (!isHired) return;
+    hiredAny = true;
+    var label, hint;
+    if (r === 'footmen') {
+      var cnt = h.staff.footmen.count;
+      var fw  = h.staff.footmen.wage || 0;
+      label = 'Footmen (' + cnt + ')';
+      hint  = '\u00a3' + (fw * cnt) + '/yr';
+    } else {
+      var st    = h.staff[r];
+      var happy = st.happiness >= 70 ? 'Content' : st.happiness >= 40 ? 'Neutral' : 'Unhappy';
+      label = st.name + ' \u2014 ' + roleLabels[r];
+      hint  = '\u00a3' + st.wage + '/yr \u00b7 ' + happy;
+    }
+    choices.push({
+      text: label + '  ' + hint,
+      fn: (function(role) { return function() { openStaffProfile(role); return null; }; })(r),
+    });
+  });
+
+  if (!hiredAny) choices.push({ text: 'No staff hired yet', fn() { return null; } });
+
+  // ── Hire new staff ── (all roles available, no tier gating)
+  choices.push({ text: '\u2500\u2500 Hire staff \u2500\u2500', fn() { return null; } });
+  ALL_ROLES.forEach(function(r) {
+    var alreadyHired = r === 'footmen'
+      ? false
+      : h.staff[r] && h.staff[r].hired;
+    if (alreadyHired) return;
+
+    // Get flat wage
+    var wage = 0;
+    if (r === 'footmen') {
+      wage = typeof FOOTMAN_WAGE !== 'undefined' ? FOOTMAN_WAGE : 12;
+    } else {
+      wage = typeof STAFF_WAGES !== 'undefined' ? (STAFF_WAGES[r] || 0) : 0;
+    }
+    var canAfford = bal >= wage;
+
+    choices.push({
+      text: '+ ' + roleLabels[r] + ' \u2014 \u00a3' + wage + '/yr'
+        + (canAfford ? '' : '  (budget short \u2014 top up accounts first)'),
+      fn: (function(role, affordable) {
+        return function() {
+          if (!affordable) {
+            queuePopup(
+              'Your household budget does not cover this wage.\nGo to Account Book to add personal funds.',
+              null,
+              [
+                { text: 'Go to Account Book', fn() { openAccountBook(); return null; } },
+                { text: 'Cancel', fn() { renderHouseholdStaffView(); return null; } },
+              ]
+            );
+            return null;
+          }
+          doHireStaff(role);
+          return null;
+        };
+      })(r, canAfford),
+    });
+  });
+
+  choices.push({ text: '\u2190 Household', fn() { if(typeof switchView==='function'){switchView('household');renderCatView('household');} return null; } });
+
+  queuePopup(header, null, choices);
+}
+
+
+function happinessBar(happiness) {
+  var pct   = Math.min(100, Math.max(0, happiness || 0));
+  var color = pct >= 70 ? '#2d5016' : pct >= 40 ? '#b8860b' : '#8b2020';
+  var label = pct >= 70 ? 'Content' : pct >= 40 ? 'Neutral' : 'Unhappy';
+  return '<div class="people-rel-wrap">'
+    + '<div class="people-rel-track"><div class="people-rel-fill" style="width:' + pct + '%;background:' + color + '"></div></div>'
+    + '<span class="people-rel-label">' + label + '</span>'
+    + '</div>';
+}
+
+// Bind staff view clicks after render
+function bindStaffViewClicks(el) {
+  if (!el) return;
+  el.querySelectorAll('.act-item[data-type="staff"]').forEach(function(item) {
+    item.addEventListener('click', function() { openStaffProfile(item.dataset.id); });
+  });
+  el.querySelectorAll('.act-item[data-type="hire"]').forEach(function(item) {
+    item.addEventListener('click', function() { doHireStaff(item.dataset.id); });
+  });
+}
+
+// ── CAREER DETAIL ─────────────────────────────────────────
+
+function openCareerDetail(careerId) {
+  if (typeof CAREER_DEFINITIONS === 'undefined') return;
+  var career = CAREER_DEFINITIONS[careerId];
+  if (!career) return;
+
+  var hasRef = G.careers && G.careers.references && G.careers.references.length > 0;
+  var isActive = G.careers && G.careers.active === careerId;
+
+  queuePopup(
+    career.name + '\n\n' + career.desc + '\n\n' + career.flavour,
+    null,
+    [
+      ...(isActive ? [{ text: '✓ Currently working', fn() { return {}; } }] : [{
+        text: 'Take up this career',
+        fn() {
+          if (!G.careers) G.careers = { unlocked:[], active:null, history:[] };
+          G.careers.active = careerId;
+          G.income += career.incomeBonus || 0;
+          if (career.repEffect) changeStat('reputation', career.repEffect);
+          addFeedEntry('You begin work as a ' + career.name + '.', 'event');
+          queuePopup(career.flavour, career.incomeBonus ? '+£' + career.incomeBonus + '/season' : null);
+          renderStats(); saveGame(); return null;
+        },
+      }]),
+      ...(G.careers && G.careers.active === careerId ? [{
+        text: 'Give it up',
+        fn() {
+          G.income = Math.max(0, G.income - (career.incomeBonus || 0));
+          G.careers.history.push({ id: careerId, ended: G.age });
+          G.careers.active = null;
+          addFeedEntry('You leave your position as ' + career.name + '.', 'event');
+          renderStats(); saveGame(); return null;
+        },
+      }] : []),
+      { text: '← Life', fn() { switchView('life'); renderCatView('life'); return null; } },
+    ]
+  );
+}
+
+// Opens the asset buy/browse popup from Household tab
+function openAssetsViewPopup() {
+  var choices = [];
+  if (G.assets && G.assets.length) {
+    G.assets.forEach(function(a) {
+      choices.push({ text: a.name + ' — £' + (a.currentValue||0).toLocaleString(),
+        fn() { if(typeof openAssetProfile==='function') openAssetProfile(a); return null; } });
+    });
+  }
+  choices.push({ text: '+ Buy an estate',   fn() { if(typeof openBuyMenu==='function') openBuyMenu('estates');   return null; } });
+  choices.push({ text: '+ Buy a carriage',  fn() { if(typeof openBuyMenu==='function') openBuyMenu('carriages'); return null; } });
+  choices.push({ text: '+ Buy a horse',     fn() { if(typeof openBuyMenu==='function') openBuyMenu('horses');    return null; } });
+  choices.push({ text: '+ Buy jewellery',   fn() { if(typeof openBuyMenu==='function') openBuyMenu('jewellery'); return null; } });
+  choices.push({ text: '← Household',  fn() { switchView('household'); renderCatView('household'); return null; } });
+  queuePopup(G.assets && G.assets.length ? 'Your Property & Assets' : 'You own no property yet.', null, choices);
 }

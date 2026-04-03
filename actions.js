@@ -227,6 +227,15 @@ const ACTIONS = {
   // ══ ADULT — SOCIETY ════════════════════════════════════
 
   ball() {
+    // Coachman check — no carriage makes arriving awkward
+    var hasCoachman = G.household && G.household.staff && G.household.staff.coachman && G.household.staff.coachman.hired;
+    var hasCarriage = G.assets && G.assets.some(function(a){ return a.type === 'carriage'; });
+    var arrivalPenalty = G.isMarried && !hasCoachman && !hasCarriage;
+
+    // Lady's maid affects presentation at the ball
+    var hasLadysMaid = G.household && G.household.staff && G.household.staff.ladysMaid && G.household.staff.ladysMaid.hired;
+    var lmQuality = hasLadysMaid ? (G.household.staff.ladysMaid.quality || 60) : 0;
+
     // Chance to meet eligible suitor (auto-intro, handled after result)
     if (!G.isMarried && G.age >= 16 && Math.random() < 0.25) {
       setTimeout(() => {
@@ -245,34 +254,48 @@ const ACTIONS = {
         );
       }, 800);
     }
-    const r = rand(1, 10);
+    // Lady's maid gives a presentation bonus
+    var presentationBonus = hasLadysMaid && lmQuality >= 70 ? rand(2,4) : hasLadysMaid ? 1 : 0;
+    if (presentationBonus > 0) changeStat('looks', presentationBonus);
+
+    var r = rand(1, 10);
+    // Arrival penalty nudges toward bad outcome
+    if (arrivalPenalty && Math.random() < 0.4) r = Math.max(1, r - 2);
+
     if (r >= 8) {
-      const g = rand(4, 8); changeStat('reputation', g);
+      var g = rand(4, 8) + presentationBonus; changeStat('reputation', g);
+      var arrivalNote = arrivalPenalty ? ' Arriving without a carriage was noticed, but you recovered.' : '';
       return {
         log:   { text: 'The ball is a triumph.', type: 'good' },
-        popup: { text: 'The ball is a triumph. You move through the room like you were born to it. Several people stare.', badge: 'Reputation +' + g },
+        popup: { text: 'The ball is a triumph. You move through the room like you were born to it.' + arrivalNote, badge: 'Reputation +' + g },
       };
     } else if (r >= 4) {
-      const g = rand(1, 3); changeStat('reputation', g);
+      var g2 = rand(1, 3); changeStat('reputation', g2);
+      var arrivalNote2 = arrivalPenalty ? ' Your arrival on foot was remarked upon.' : '';
       return {
         log:   { text: 'A pleasant evening at the ball.', type: 'good' },
-        popup: { text: 'A pleasant enough evening. You dance twice and have one genuinely interesting conversation.', badge: 'Reputation +' + g },
+        popup: { text: 'A pleasant enough evening. You dance twice and have one genuinely interesting conversation.' + arrivalNote2, badge: 'Reputation +' + g2 },
       };
     } else {
-      const d = rand(3, 8); changeStat('reputation', -d); G.scandals++;
-      const mishap = pick([
+      var d = rand(3, 8); changeStat('reputation', -d); G.scandals++;
+      var mishap = pick([
         'You address a Duke as Mister. The silence is enormous.',
         'Your hem tears at the worst possible moment.',
         'The punch is considerably stronger than expected. The next morning is catastrophic.',
       ]);
+      if (arrivalPenalty) mishap += ' And arriving without a carriage set entirely the wrong tone.';
       return {
         log:   { text: mishap, type: 'bad' },
         popup: { text: mishap, badge: 'Reputation -' + d },
       };
     }
   },
-
   park() {
+    // Having a carriage or horse for Hyde Park improves visibility
+    var hasCarriage = G.assets && G.assets.some(function(a){ return a.type === 'carriage'; });
+    var hasHorse    = G.assets && G.assets.some(function(a){ return a.type === 'horse'; });
+    var parkBonus   = hasCarriage ? rand(2,4) : hasHorse ? rand(1,2) : 0;
+    if (parkBonus > 0) changeStat('reputation', parkBonus);
     // Chance to encounter eligible person in Hyde Park (Spring only)
     if (!G.isMarried && G.age >= 16 && G.season === 'Spring' && Math.random() < 0.20) {
       setTimeout(() => {

@@ -63,50 +63,81 @@ function initHousehold() {
 // ── TIER ───────────────────────────────────────────────────
 
 function calculateHouseholdTier() {
-  const spouse = G.spouse;                        // Fixed: was G.people.spouse
+  var spouse = G.spouse;
   if (!spouse) return 'humble';
 
-  const wealth    = spouse.wealth    || 0;
-  const titleRank = spouse.titleRank || 0;        // Fixed: titleRank is 0-5 int
+  // Combined annual income: husband's wealth + player's own income/assets
+  var husbandIncome = spouse.wealth    || 0;
+  var playerIncome  = G.income         || 0;
+  var titleRank     = spouse.titleRank || 0;
+  var combined      = husbandIncome + playerIncome;
 
-  // Title overrides wealth in some cases
-  if (titleRank >= 4) return 'grand';             // Duke/Earl
-  if (titleRank >= 2) return 'wealthy';           // Baron/Baronet
-  if (wealth > 10000) return 'wealthy';
-  if (wealth > 5000)  return 'comfortable';
-  if (wealth > 2000)  return 'modest';
+  // Assets can lift the tier — owning a grand estate or manor matters
+  var ownsGrandEstate = G.assets && G.assets.some(function(a) { return a.id === 'grand_estate'; });
+  var ownsManor       = G.assets && G.assets.some(function(a) { return a.id === 'manor'; });
+  var assetIncome     = 0;
+  if (G.assets) {
+    G.assets.forEach(function(a) { assetIncome += (a.baseIncome || 0); });
+  }
+  combined += assetIncome;
+
+  // Title always lifts tier
+  if (titleRank >= 4 || ownsGrandEstate || combined > 3000) return 'grand';
+  if (titleRank >= 2 || ownsManor       || combined > 1500) return 'wealthy';
+  if (combined > 600)                                        return 'comfortable';
+  if (combined > 250)                                        return 'modest';
   return 'humble';
 }
 
 // ── STAFF AVAILABILITY ─────────────────────────────────────
 
+// ── HOUSEHOLD TIERS ───────────────────────────────────────
+// humble:      Curate's wife, small farmer. One servant if lucky.
+// modest:      Respectable but not comfortable. A small establishment.
+// comfortable: Gentleman's family. The expected minimum for a lady.
+// wealthy:     Well-off gentry. A proper household.
+// grand:       Nobility or very wealthy. A full establishment.
+
 const STAFF_BY_TIER = {
   humble:      ['cook'],
-  modest:      ['cook','housekeeper'],
-  comfortable: ['cook','housekeeper','ladysMaid','nursemaid','wetNurse'],
+  modest:      ['cook','housekeeper','nursemaid'],
+  comfortable: ['cook','housekeeper','ladysMaid','nursemaid','wetNurse','coachman'],
   wealthy:     ['cook','housekeeper','ladysMaid','nursemaid','wetNurse',
                 'butler','governess','coachman'],
   grand:       ['cook','housekeeper','ladysMaid','nursemaid','wetNurse',
                 'butler','governess','coachman','footmen'],
 };
 
+// How many of each staff are standard at each tier
+const STAFF_COUNT_BY_TIER = {
+  humble:      { cook:1 },
+  modest:      { cook:1, housekeeper:1 },
+  comfortable: { cook:1, housekeeper:1, ladysMaid:1, coachman:1 },
+  wealthy:     { cook:1, housekeeper:1, ladysMaid:1, butler:1, coachman:1 },
+  grand:       { cook:1, housekeeper:1, ladysMaid:1, butler:1, coachman:1, footmen:4 },
+};
+
 function getAvailableStaff() {
-  const tier = G.household ? G.household.tier : 'humble';
-  return STAFF_BY_TIER[tier] || [];
+  // All roles available — no tier gating
+  // Footmen can be hired multiple times (up to 8)
+  return ['housekeeper','cook','ladysMaid','butler','nursemaid',
+          'wetNurse','governess','coachman','footmen'];
 }
 
 // ── WAGES ──────────────────────────────────────────────────
 
+// Flat annual wages — no tier requirement
 const STAFF_WAGES = {
-  housekeeper: { humble:0, modest:12, comfortable:16, wealthy:20, grand:30 },
-  cook:        { humble:8, modest:10, comfortable:14, wealthy:18, grand:25 },
-  ladysMaid:   { humble:0, modest:0,  comfortable:10, wealthy:14, grand:18 },
-  butler:      { humble:0, modest:0,  comfortable:0,  wealthy:20, grand:35 },
-  wetNurse:    { humble:0, modest:6,  comfortable:8,  wealthy:10, grand:12 },
-  governess:   { humble:0, modest:0,  comfortable:15, wealthy:20, grand:30 },
-  nursemaid:   { humble:0, modest:6,  comfortable:8,  wealthy:10, grand:12 },
-  coachman:    { humble:0, modest:0,  comfortable:12, wealthy:16, grand:20 },
+  housekeeper: 20,
+  cook:        16,
+  ladysMaid:   14,
+  butler:      30,
+  wetNurse:    10,
+  governess:   25,
+  nursemaid:   10,
+  coachman:    18,
 };
+const FOOTMAN_WAGE = 12; // per footman
 
 const FOOTMEN_WAGE = { humble:0, modest:0, comfortable:0, wealthy:10, grand:12 };
 
@@ -135,7 +166,7 @@ function hireStaff(role) {
   const avail = getAvailableStaff();
 
   if (!avail.includes(role)) {
-    return { success:false, message:'Your household cannot support a ' + role + '.' };
+    return { success:false, message:'That is not a recognised household role.' };
   }
   if (role === 'footmen') {
     return hireFootman();
@@ -144,12 +175,11 @@ function hireStaff(role) {
     return { success:false, message:'You already have a ' + role + '.' };
   }
 
-  const tier    = h.tier;
-  const wage    = STAFF_WAGES[role] ? (STAFF_WAGES[role][tier] || 0) : 0;
-  const quality = rand(55, 95);
-  const name    = generateStaffName(role);
+  var wage    = STAFF_WAGES[role] || 0;
+  var quality = rand(55, 95);
+  var name    = generateStaffName(role);
 
-  h.staff[role] = { hired:true, name, quality, wage, happiness:85 };
+  h.staff[role] = { hired:true, name:name, quality:quality, wage:wage, happiness:85 };
 
   addAccountEntry('wages', 'Engaged ' + role, -wage);
   recalcHouseholdStats();
@@ -160,9 +190,8 @@ function hireStaff(role) {
 }
 
 function hireFootman() {
-  const h    = G.household;
-  const tier = h.tier;
-  const wage = FOOTMEN_WAGE[tier] || 0;
+  var h    = G.household;
+  var wage = FOOTMAN_WAGE || 12;
 
   h.staff.footmen.count = Math.min(h.staff.footmen.count + 1, 6);
   h.staff.footmen.wage  = wage;
@@ -227,17 +256,43 @@ function recalcHouseholdBalance() {
 
 function calculateHouseholdAllowance() {
   if (!G.household) return;
-  const tier = G.household.tier;
-  const allowances = {
-    humble:      50,
-    modest:      150,
-    comfortable: 400,
-    wealthy:     1000,
-    grand:       3000,
-  };
-  const amount = allowances[tier] || 50;
-  G.household.accounts.seasonlyAllowance = amount;
-  addAccountEntry('allowance', 'Household allowance', amount);
+
+  // Husband's allowance is based on his wealth, not the tier
+  // This is the amount he chooses to give — she may supplement it
+  var husbandWealth  = G.spouse ? (G.spouse.wealth || 0) : 0;
+  var spouseApproval = G.spouse ? (G.spouse.approval || 60) : 60;
+
+  // Base allowance: roughly 10% of husband's annual income per season
+  var baseAllowance = Math.floor(husbandWealth / 10);
+
+  // Spouse approval affects willingness to give
+  if (spouseApproval < 20) {
+    baseAllowance = Math.floor(baseAllowance * 0.4); // very unhappy — barely anything
+  } else if (spouseApproval < 35) {
+    baseAllowance = Math.floor(baseAllowance * 0.65);
+  } else if (spouseApproval >= 80) {
+    baseAllowance = Math.floor(baseAllowance * 1.2); // very happy — extra generosity
+  }
+
+  // Minimum of 20, maximum of 5000 per season
+  baseAllowance = Math.max(20, Math.min(5000, baseAllowance));
+
+  G.household.accounts.seasonlyAllowance = baseAllowance;
+  G.household.accounts.husbandAllowance  = baseAllowance; // store separately
+  addAccountEntry('allowance',
+    'Allowance from ' + (G.spouse ? G.spouse.first : 'your husband'),
+    baseAllowance);
+}
+
+// Player adds their own funds to the household budget
+function topUpHouseholdBudget(amount) {
+  if (!G.household) return false;
+  if (!amount || amount <= 0) return false;
+  if (G.wealth < amount) return false;
+  G.wealth -= amount;
+  addAccountEntry('top_up', 'Your personal contribution', amount);
+  saveGame();
+  return true;
 }
 
 // ── RECALCULATION ──────────────────────────────────────────
@@ -311,47 +366,201 @@ function refreshHouseholdTier() {
 
 function householdSeasonalUpdate() {
   if (!G.household || !G.isMarried) return [];
-  const events = [];
+  var events  = [];
+  var h       = G.household;
+  var staff   = h.staff;
+  var notable = []; // lines that warrant a popup summary
+  var feedLines = []; // lines that go quietly to the feed
 
-  // Pay wages
-  const wages = recalcStaffWages();
+  // ── 1. WAGES ─────────────────────────────────────────────
+  var wages = recalcStaffWages();
   if (wages > 0) {
-    G.wealth = Math.max(0, G.wealth - wages);
     addAccountEntry('wages', 'Seasonal staff wages', -wages);
   }
 
   // Receive allowance
   calculateHouseholdAllowance();
-  G.wealth += G.household.accounts.seasonlyAllowance;
 
-  // Staff happiness drift
-  updateStaffHappiness();
-
-  // Check for staff problems
-  var unhappy = Object.keys(G.household.staff)
-    .filter(function(r) { return r !== 'footmen' && G.household.staff[r].hired
-                              && G.household.staff[r].happiness < 30; });
-
-  if (unhappy.length > 0 && Math.random() < 0.4) {
-    var role = pick(unhappy);
-    var st   = G.household.staff[role];
+  // ── 2. DEFICIT CHECK ─────────────────────────────────────
+  if (h.accounts.balance < 0) {
+    var shortfall = Math.abs(h.accounts.balance);
     events.push({
-      text: st.name + ' appears to be unhappy in your service.',
+      text: 'The household accounts are in deficit.',
       type: 'bad',
       popup: {
-        text: st.name + ' has given notice. The household will feel her absence.',
+        text: 'The household accounts do not balance this season. You are £'
+          + shortfall + ' short. Your husband will notice.',
+        choices: [
+          { text: 'Cover it from your own funds', fn() {
+            if (G.wealth >= shortfall) {
+              G.wealth -= shortfall;
+              h.accounts.balance = 0;
+              if (G.spouse) G.spouse.approval = clamp((G.spouse.approval||60)+5, 0, 100);
+              return { text: 'You cover the deficit quietly. Your husband is none the wiser.', badge:'-£'+shortfall };
+            }
+            return { text: 'You do not have enough. The shortfall remains.' };
+          }},
+          { text: 'Dismiss a member of staff', fn() {
+            return { text: 'You will need to review the household arrangements.' };
+          }},
+          { text: 'Say nothing', fn() {
+            if (G.spouse) G.spouse.approval = clamp((G.spouse.approval||60)-rand(5,12), 0, 100);
+            return { text: 'Your husband notices. He says little. His expression says more.', badge:'Approval -8' };
+          }},
+        ],
+      },
+    });
+  }
+
+  // ── 3. STAFF STAT EFFECTS ─────────────────────────────────
+  // Cook → health
+  if (staff.cook && staff.cook.hired) {
+    var cookBonus = staff.cook.quality >= 75 ? 4 : staff.cook.quality >= 50 ? 2 : 1;
+    changeStat('health', cookBonus);
+    if (cookBonus >= 4) feedLines.push('The cooking has been excellent this season.');
+  } else {
+    // No cook — meals are poor
+    changeStat('health', -rand(2,5));
+    notable.push('Without a cook, meals have been inconsistent. Your health has suffered.');
+  }
+
+  // Housekeeper → reputation (house runs smoothly, social standing maintained)
+  if (staff.housekeeper && staff.housekeeper.hired) {
+    var hkBonus = staff.housekeeper.quality >= 75 ? 3 : staff.housekeeper.quality >= 50 ? 1 : 0;
+    if (hkBonus > 0) changeStat('reputation', hkBonus);
+  } else {
+    // No housekeeper — house shows signs of disorder
+    if (G.assets && G.assets.some(function(a){ return a.type === 'estate'; })) {
+      changeStat('reputation', -rand(2,4));
+      notable.push('The house has been somewhat disordered this season. People have noticed.');
+    }
+  }
+
+  // Lady's maid → looks (presentation, grooming, dress)
+  if (staff.ladysMaid && staff.ladysMaid.hired) {
+    var lmBonus = staff.ladysMaid.quality >= 75 ? 3 : staff.ladysMaid.quality >= 50 ? 1 : 0;
+    if (lmBonus > 0) {
+      changeStat('looks', lmBonus);
+      if (lmBonus >= 3) feedLines.push('Your lady\u2019s maid keeps you looking your best.');
+    }
+  } else if (G.isMarried) {
+    // No lady's maid — presentation suffers slightly
+    changeStat('looks', -1);
+  }
+
+  // Butler → husband approval (house runs with proper formality)
+  if (staff.butler && staff.butler.hired) {
+    if (staff.butler.happiness < 40) {
+      // Unhappy butler — gossip risk
+      if (Math.random() < 0.3) {
+        changeStat('reputation', -rand(3,7));
+        notable.push(staff.butler.name + ' has been indiscreet. Something said below-stairs has reached the wrong ears.');
+      }
+    } else {
+      if (G.spouse) G.spouse.approval = clamp((G.spouse.approval||60)+rand(1,3), 0, 100);
+    }
+  }
+
+  // ── 4. CHILDREN'S WELLBEING ──────────────────────────────
+  var youngChildren = (G.children||[]).filter(function(c){ return (c.age||0) < 12; });
+  if (youngChildren.length) {
+    if (staff.governess && staff.governess.hired) {
+      var govBonus = staff.governess.quality >= 70 ? 2 : 1;
+      youngChildren.forEach(function(c) {
+        if (typeof changeCloseness === 'function') changeCloseness(c, govBonus);
+      });
+      if (govBonus >= 2) feedLines.push('The governess is doing well with the children.');
+    } else if (youngChildren.some(function(c){ return (c.age||0) >= 5; })) {
+      notable.push('The children have had no governess this season. Their education is suffering.');
+    }
+
+    var infants = youngChildren.filter(function(c){ return (c.age||0) < 2; });
+    if (infants.length) {
+      if (!(staff.wetNurse && staff.wetNurse.hired) && !(h.nursery && h.nursery.hasWetNurse)) {
+        changeStat('health', -rand(2,4));
+        notable.push('The demands of a nursing infant are considerable without help.');
+      }
+    }
+
+    if (staff.nursemaid && staff.nursemaid.hired) {
+      // Children well-looked-after → closeness bonus
+      youngChildren.forEach(function(c) {
+        if (typeof changeCloseness === 'function') changeCloseness(c, 1);
+      });
+    }
+  }
+
+  // ── 5. UNDERSTAFFING FOR GRAND PROPERTIES ────────────────
+  var grandAssets = (G.assets||[]).filter(function(a){
+    return a.type === 'estate' && (a.id === 'grand_estate' || a.id === 'manor');
+  });
+  if (grandAssets.length && !staff.housekeeper.hired && !staff.butler.hired) {
+    if (Math.random() < 0.4) {
+      var complaints = [
+        'The grand estate runs itself poorly without proper staff. The tenants have begun to talk.',
+        'Visitors to the manor have remarked — not unkindly, but pointedly — on the thin staff.',
+        'An estate of this size requires more hands. The gaps are beginning to show.',
+      ];
+      changeStat('reputation', -rand(3,6));
+      notable.push(pick(complaints));
+    }
+  }
+
+  // ── 6. HUSBAND APPROVAL — OVERALL MANAGEMENT ─────────────
+  var mgmt = h.management ? h.management.total : 50;
+  if (G.spouse) {
+    if (mgmt >= 70) {
+      G.spouse.approval = clamp((G.spouse.approval||60)+rand(1,3), 0, 100);
+    } else if (mgmt < 35) {
+      G.spouse.approval = clamp((G.spouse.approval||60)-rand(1,3), 0, 100);
+    }
+  }
+
+  // ── 7. STAFF HAPPINESS DRIFT ─────────────────────────────
+  updateStaffHappiness();
+
+  // Staff giving notice
+  var unhappy = Object.keys(staff).filter(function(r) {
+    return r !== 'footmen' && staff[r].hired && staff[r].happiness < 25;
+  });
+  if (unhappy.length && Math.random() < 0.5) {
+    var role = pick(unhappy);
+    var st   = staff[role];
+    events.push({
+      text: st.name + ' has given notice.',
+      type: 'bad',
+      popup: {
+        text: st.name + ' has given notice. She will leave at the end of the month unless matters improve.',
         choices: [
           { text: 'Raise her wages (+£5/yr)', fn() {
             st.wage      += 5;
-            st.happiness  = Math.min(100, st.happiness + 30);
-            G.wealth     -= 5;
-            return { text: st.name + ' seems gratified. She stays.', badge: 'Staff retained' };
+            st.happiness  = Math.min(100, st.happiness+35);
+            h.accounts.balance -= 5;
+            return { text: st.name + ' seems gratified. She stays.', badge:'Staff retained' };
           }},
           { text: 'Accept her notice', fn() {
-            dismissStaff(role);
-            return { text: st.name + ' departs. You will need to find a replacement.', badge: 'Staff lost' };
+            if (typeof dismissStaff==='function') dismissStaff(role);
+            return { text: st.name + ' departs. The household will feel her absence.', badge:'Staff lost' };
           }},
         ],
+      },
+    });
+  }
+
+  // ── 8. FEED + NOTABLE POPUP ──────────────────────────────
+  // Quiet feed entries
+  feedLines.forEach(function(line) {
+    if (typeof addFeedEntry === 'function') addFeedEntry(line, 'good');
+  });
+
+  // Notable popup — only if something worth flagging happened
+  if (notable.length) {
+    events.push({
+      text: 'Household: ' + notable[0],
+      type: notable.some(function(n){ return n.indexOf('suffer') > -1 || n.indexOf('noticed') > -1; }) ? 'bad' : 'event',
+      popup: {
+        text: 'This season in the household:\n\n' + notable.join('\n\n'),
+        choices: null,
       },
     });
   }
@@ -360,6 +569,7 @@ function householdSeasonalUpdate() {
   saveGame();
   return events;
 }
+
 
 function updateStaffHappiness() {
   if (!G.household) return;

@@ -3,7 +3,7 @@
 // Caches all game files for offline play
 // ═══════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'how-ardently-v1';
+const CACHE_NAME = 'how-ardently-v2';
 
 const FILES_TO_CACHE = [
   '/',

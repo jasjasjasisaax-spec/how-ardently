@@ -4,11 +4,33 @@
 
 // ── CONSTANTS ──────────────────────────────────────────────
 
+// RANKS kept for backward compat with save files
 const RANKS = [
   { id:'nobility', title:'Nobility',  income:4000, wit:0,  looks:5,  rep:15 },
   { id:'gentry',   title:'Gentry',    income:1500, wit:5,  looks:0,  rep:5  },
   { id:'clergy',   title:'Clergy',    income:400,  wit:10, looks:0,  rep:0  },
   { id:'trade',    title:'Trade',     income:800,  wit:5,  looks:0,  rep:-5 },
+];
+
+// Father background pools — used in new character creation
+const FATHER_TITLES = [
+  { title:'Sir',         titleRank:1, wealthMin:800,  wealthMax:3000, rep:8  },
+  { title:'The Hon.',    titleRank:2, wealthMin:1500, wealthMax:5000, rep:12 },
+  { title:'Lord',        titleRank:3, wealthMin:3000, wealthMax:10000,rep:18 },
+  { title:'Earl',        titleRank:4, wealthMin:5000, wealthMax:20000,rep:25 },
+  { title:'Mr',          titleRank:0, wealthMin:100,  wealthMax:800,  rep:0  },
+];
+
+const FATHER_PROFESSIONS = [
+  { id:'landed_gentry', label:'a gentleman of the gentry',        wealthMult:1.0, witBonus:0,  faithBonus:0  },
+  { id:'clergyman',     label:'a clergyman',                       wealthMult:0.3, witBonus:10, faithBonus:20 },
+  { id:'physician',     label:'a physician',                       wealthMult:0.6, witBonus:15, faithBonus:0  },
+  { id:'lawyer',        label:'a lawyer',                          wealthMult:0.7, witBonus:10, faithBonus:0  },
+  { id:'naval_officer', label:'a naval officer',                   wealthMult:0.5, witBonus:5,  faithBonus:5  },
+  { id:'army_officer',  label:'an officer in the army',            wealthMult:0.6, witBonus:0,  faithBonus:0  },
+  { id:'merchant',      label:'a merchant of some consequence',    wealthMult:0.8, witBonus:5,  faithBonus:0  },
+  { id:'banker',        label:'a banker',                          wealthMult:1.2, witBonus:5,  faithBonus:0  },
+  { id:'antiquary',     label:'a gentleman of scholarly pursuits', wealthMult:0.4, witBonus:20, faithBonus:5  },
 ];
 
 const REP_TIERS = [
@@ -190,6 +212,126 @@ function generateNPC(id, forceMale = null) {
   };
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// FATHER BACKGROUND GENERATOR
+// Randomises the father's wealth, profession, title
+// which determines the player's starting circumstances
+// ═══════════════════════════════════════════════════════════
+
+function generateFatherBackground() {
+  // Use the previewed background from character creation if available
+  if (typeof window !== 'undefined' && window._pendingFatherBg) {
+    var bg = window._pendingFatherBg;
+    window._pendingFatherBg = null;
+    return bg;
+  }
+  // Pick a profession (weighted — most are middling gentry)
+  var profWeights = [30, 8, 10, 10, 8, 8, 10, 6, 10]; // matches FATHER_PROFESSIONS order
+  var profTotal = profWeights.reduce(function(a,b){return a+b;}, 0);
+  var profRoll = Math.random() * profTotal;
+  var profIdx = 0;
+  var cumul = 0;
+  for (var i = 0; i < profWeights.length; i++) {
+    cumul += profWeights[i];
+    if (profRoll < cumul) { profIdx = i; break; }
+  }
+  var profession = FATHER_PROFESSIONS[profIdx];
+
+  // Title: 70% untitled, 20% Sir, 7% Hon/Lord, 3% Earl+
+  var titleRoll = Math.random();
+  var titleObj;
+  if (titleRoll < 0.03) {
+    titleObj = FATHER_TITLES[3]; // Earl
+  } else if (titleRoll < 0.10) {
+    titleObj = FATHER_TITLES[2]; // Lord
+  } else if (titleRoll < 0.20) {
+    titleObj = FATHER_TITLES[1]; // Hon
+  } else if (titleRoll < 0.30) {
+    titleObj = FATHER_TITLES[0]; // Sir
+  } else {
+    titleObj = FATHER_TITLES[4]; // Mr (untitled)
+  }
+
+  // Father's base wealth — random within title range, modified by profession
+  var baseWealth = rand(titleObj.wealthMin, titleObj.wealthMax);
+  var fatherWealth = Math.floor(baseWealth * profession.wealthMult);
+
+  // Pin money: daughters get a small seasonal allowance
+  // Typically 1-5% of father's annual income, per season
+  var pinMoneyPct = titleObj.titleRank >= 3 ? 0.04 : titleObj.titleRank >= 1 ? 0.025 : 0.015;
+  var pinMoney = Math.max(5, Math.floor(fatherWealth * pinMoneyPct));
+
+  // Father's surname (becomes player surname)
+  var surname = pick(NAMES.surname);
+
+  // Father's title affects starting reputation
+  var repBonus = titleObj.rep + (profession.id === 'clergyman' ? 5 : 0);
+
+  // Wit and looks bonuses
+  var witBonus   = profession.witBonus  + rand(-5, 5);
+  var looksBonus = titleObj.titleRank >= 3 ? rand(5,10) : rand(-5, 5);
+  var faithBonus = profession.faithBonus + rand(-5, 5);
+
+  // Father's potential will — what the player might inherit
+  // (actual inheritance resolved at age 18/21 or on father's death)
+  var willType = 'none';
+  var willValue = 0;
+  var willDesc = '';
+
+  if (fatherWealth > 8000) {
+    // Very wealthy — estate likely entailed, but settlements possible
+    willType  = Math.random() < 0.4 ? 'settlement' : 'investment';
+    willValue = rand(500, 2000);
+    willDesc  = willType === 'settlement'
+      ? 'A marriage settlement of £' + willValue + ' is set aside for you.'
+      : 'A share in the family investments, worth some £' + willValue + ', is intended for you.';
+  } else if (fatherWealth > 2000) {
+    willType  = Math.random() < 0.3 ? 'property' : 'cash';
+    willValue = rand(200, 800);
+    willDesc  = willType === 'property'
+      ? 'Your father intends a small property for you, should you remain unmarried.'
+      : '£' + willValue + ' set aside for your future.';
+  } else if (fatherWealth > 500) {
+    willType  = 'cash';
+    willValue = rand(50, 300);
+    willDesc  = '£' + willValue + ' is all that can be managed, but it is given with love.';
+  } else {
+    willDesc = 'There is very little to leave. Your father knows it and it weighs on him.';
+  }
+
+  return {
+    profession:  profession.id,
+    profLabel:   profession.label,
+    titleRank:   titleObj.titleRank,
+    titlePrefix: titleObj.title,
+    surname:     surname,
+    fatherWealth: fatherWealth,
+    rankId:      titleObj.titleRank >= 3 ? 'nobility' : titleObj.titleRank >= 1 ? 'gentry' : profession.id === 'clergyman' ? 'clergy' : profession.wealthMult >= 0.8 ? 'trade' : 'gentry',
+    rankLabel:   titleObj.titleRank >= 3 ? 'Nobility' : titleObj.titleRank >= 1 ? 'Gentry' : profession.label.charAt(0).toUpperCase() + profession.label.slice(1),
+    pinMoney:    pinMoney,
+    repBonus:    repBonus,
+    witBonus:    witBonus,
+    looksBonus:  looksBonus,
+    faithBonus:  faithBonus,
+    will: {
+      type:  willType,
+      value: willValue,
+      desc:  willDesc,
+    },
+  };
+}
+
+// Generate a richer father description for the birth popup
+function describeFatherBackground(bg) {
+  var prefix = bg.titlePrefix !== 'Mr' ? bg.titlePrefix + ' ' : 'Mr ';
+  var wealth = bg.fatherWealth > 5000 ? 'wealthy'
+             : bg.fatherWealth > 2000 ? 'comfortably placed'
+             : bg.fatherWealth > 500  ? 'of modest means'
+             : 'of slender means';
+  return prefix + bg.surname + ', ' + bg.profLabel + ', ' + wealth + '.';
+}
+
 function generateFamily() {
   // Parents are in their 30s-50s when player is born (age 6)
   const motherAge = rand(28, 48);
@@ -210,15 +352,22 @@ function generateFamily() {
     approval:  65,  // mothers start more approving
     wealth:    Math.floor(G.wealth * 0.3),
   };
+  var bg = G.fatherBg || {};
+  var fatherSurname = bg.surname || pick(NAMES.surname);
+  var fatherPrefix  = bg.titlePrefix || 'Mr';
   G.father = {
-    name:      'Mr ' + pick(NAMES.surname),
-    closeness: 50, alive: true, trait: fTrait,
-    age:       fatherAge,
-    health:    rand(50, 90),
-    wit:       rand(30, 80),
-    faith:     clamp((faithMap[fTrait]||50) + rand(-10,10), 20, 95),
-    approval:  55,
-    wealth:    G.wealth, // father controls family wealth
+    name:       fatherPrefix + ' ' + fatherSurname,
+    surname:    fatherSurname,
+    closeness:  50, alive: true, trait: fTrait,
+    age:        fatherAge,
+    health:     rand(50, 90),
+    wit:        rand(30, 80),
+    faith:      clamp((faithMap[fTrait]||50) + rand(-10,10), 20, 95),
+    approval:   55,
+    wealth:     bg.fatherWealth || rand(200, 2000),
+    titleRank:  bg.titleRank || 0,
+    profession: bg.profession || 'landed_gentry',
+    will:       bg.will || null,
   };
   G.siblings = [];
   const count = rand(1, 3);
@@ -245,26 +394,32 @@ function generateFamily() {
 // ── NEW GAME ───────────────────────────────────────────────
 
 function newGame(name, gender, rankId) {
-  const rank = RANKS.find(r => r.id === rankId);
+  // rankId kept for backward compat but no longer drives stats
+  // Father background is generated randomly and drives starting conditions
+  var fatherBg = generateFatherBackground();
 
   G = {
     // Identity
-    name, gender, rankId,
-    rank: rank.title,
+    name: name, gender: gender,
+    rankId:   fatherBg.rankId,
+    rank:     fatherBg.rankLabel,
+    fatherBg: fatherBg,  // stored for use in family events
 
-    // Age & time (no calendar year shown to player)
+    // Age & time
     age:    0,
-    season: 'Spring',  // 'Spring' | 'Autumn'
+    season: 'Spring',
 
-    // Core stats (0–100)
+    // Core stats — driven by father's background, not player choice
     health:     80,
-    looks:      clamp(40 + rank.looks, 0, 100),
-    wit:        clamp(30 + rank.wit,   0, 100),
-    reputation: clamp(40 + rank.rep,   0, 100),
+    looks:      clamp(40 + fatherBg.looksBonus, 0, 100),
+    wit:        clamp(30 + fatherBg.witBonus,   0, 100),
+    reputation: clamp(40 + fatherBg.repBonus,   0, 100),
 
-    // Finances
-    wealth: rank.income,
-    income: rank.income,
+    // Finances — player starts with nothing personally
+    // Pin money is provided by father each season
+    wealth: 0,
+    income: 0,
+    pinMoney: fatherBg.pinMoney,  // seasonal allowance from father
 
     // Life phase
     phase: 'childhood',  // childhood | debut | adult | elder
@@ -289,7 +444,7 @@ function newGame(name, gender, rankId) {
     siblings: [],
 
     // Player faith (0-100) — affects family approval, some events
-    faith:       clamp(40 + (rankId === 'clergy' ? 30 : rankId === 'nobility' ? 10 : 0), 10, 95),
+    faith:       clamp(40 + fatherBg.faithBonus, 10, 95),
     // Education & debut
     eduStats:    null,   // populated by initEducation()
     eligibility: 0,
@@ -493,6 +648,11 @@ function advanceSeason() {
     // Annual income (base + asset net income)
     const assetNet = typeof netAssetIncome === 'function' ? netAssetIncome() : 0;
     G.wealth += Math.floor(G.income / 2) + assetNet;
+    // Pin money — father's seasonal allowance for unmarried female players
+    if (G.gender === 'female' && !G.isMarried && G.phase === 'childhood' && G.pinMoney > 0) {
+      G.wealth += G.pinMoney;
+      if (G.age >= 6) events.push({ text: 'Your father’s quarterly allowance arrives. £' + G.pinMoney + '.', type: 'good' });
+    }
   } else {
     // Autumn: smaller income payment
     const assetNetA = typeof netAssetIncome === 'function' ? netAssetIncome() : 0;
@@ -561,7 +721,22 @@ function advanceSeason() {
       G.fullCurriculumUnlocked = true;
       events.push({ earlyMilestone: 'full_curriculum', age: 10 });
     }
+    // Future talk — father/guardian conversation about prospects, fires once at 13
+    if (G.phase === 'childhood' && G.age === 13 && !G.futureTalkDone && G.gender === 'female') {
+      G.futureTalkDone = true;
+      events.push({ earlyMilestone: 'future_talk', age: 13 });
+    }
     // Age 16+: debut negotiation
+    // ── Coming of age inheritance (18 and 21) ──────────────
+    if (G.gender === 'female' && !G.inheritanceHandled18 && G.age === 18) {
+      G.inheritanceHandled18 = true;
+      events.push({ comingOfAge: 18 });
+    }
+    if (G.gender === 'female' && !G.inheritanceHandled21 && G.age === 21) {
+      G.inheritanceHandled21 = true;
+      events.push({ comingOfAge: 21 });
+    }
+
     if (G.phase === 'childhood' && G.age >= 16 && !G.debutAge) {
       events.push({ debutNegotiation: true });
     }

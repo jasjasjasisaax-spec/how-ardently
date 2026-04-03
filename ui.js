@@ -1098,6 +1098,9 @@ function doAgeUp() {
           );
         }, 500);
       }
+      if (ev.earlyMilestone === 'future_talk') {
+        setTimeout(function() { fireFutureTalkConversation(); }, 600);
+      }
       if (ev.earlyMilestone === 'full_curriculum') {
         setTimeout(() => {
           addFeedEntry('You are ten years old. A whole new world of study opens.', 'event');
@@ -1449,6 +1452,12 @@ function doAgeUp() {
       }
     }
 
+    // Coming of age inheritance
+    if (ev.comingOfAge) {
+      var coa = ev.comingOfAge;
+      setTimeout(function() { fireComingOfAgeEvent(coa); }, 600);
+    }
+
     // NPC introduction
     if (ev.introduceNPC) {
       setTimeout(() => {
@@ -1493,20 +1502,8 @@ let selGender = null;
 let selRank   = null;
 
 function buildRankGrid() {
-  document.getElementById('rank-grid').innerHTML = RANKS.map(r => `
-    <div class="r-btn" id="rb-${r.id}">
-      <div class="rt">${r.title}</div>
-      <div class="ri">£${r.income.toLocaleString()}/yr</div>
-    </div>`).join('');
-
-  document.querySelectorAll('.r-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      selRank = btn.id.replace('rb-', '');
-      document.querySelectorAll('.r-btn').forEach(b => b.classList.remove('sel'));
-      btn.classList.add('sel');
-      checkCreate();
-    });
-  });
+  // Rank grid removed — family background now randomised at game start
+  // Function kept to avoid errors from DOMContentLoaded call
 }
 
 function selectGender(g) {
@@ -1517,20 +1514,45 @@ function selectGender(g) {
 }
 
 function checkCreate() {
-  const name = document.getElementById('inp-name').value.trim();
-  document.getElementById('btn-enter').disabled = !(name && selGender && selRank);
+  var name = document.getElementById('inp-name').value.trim();
+  document.getElementById('btn-enter').disabled = !(name && selGender);
+  // Show family preview once name + gender chosen
+  if (name && selGender) {
+    if (!_previewBg || _previewGender !== selGender) {
+      _previewBg     = typeof generateFatherBackground === 'function' ? generateFatherBackground() : null;
+      _previewGender = selGender;
+    }
+    var wrap = document.getElementById('family-preview-wrap');
+    var prev = document.getElementById('family-preview');
+    if (wrap) wrap.style.display = 'block';
+    if (prev && _previewBg) {
+      prev.textContent = 'Your father is ' + _previewBg.profLabel + '. '
+        + (_previewBg.fatherWealth > 3000 ? 'The family is comfortably wealthy.'
+         : _previewBg.fatherWealth > 800  ? 'The family is of middling means.'
+         : 'The family income is modest.')
+        + ' Your pin money will be £' + _previewBg.pinMoney + ' a season.';
+    }
+  }
 }
+var _previewBg = null;
+var _previewGender = null;
 
 function beginGame() {
-  const name = document.getElementById('inp-name').value.trim();
-  newGame(name, selGender, selRank);
+  var name = document.getElementById('inp-name').value.trim();
+  // Use the previewed background if available, otherwise generate fresh
+  if (_previewBg && typeof newGame === 'function') {
+    // Store previewBg so newGame can use it
+    window._pendingFatherBg = _previewBg;
+  }
+  newGame(name, selGender, 'gentry'); // rankId kept for compat
   showScreen('s-game');
   currentView = 'home';
   buildNav();
   renderStats();
   addFeedEntry('Your story begins.', 'event');
+  // Brief birth popup with father's background and will hint
   queuePopup(
-    `Welcome to the world, ${name}. The season is ${G.season}, and everything lies ahead of you.`,
+    'Welcome to the world, ' + name + '. The season is ' + G.season + ', and everything lies ahead of you.',
     G.gender === 'female' ? 'A Lady of the Regency' : 'A Gentleman of the Regency'
   );
   saveGame();
@@ -3826,4 +3848,295 @@ function openAssetsViewPopup() {
   choices.push({ text: '+ Buy jewellery',   fn() { if(typeof openBuyMenu==='function') openBuyMenu('jewellery'); return null; } });
   choices.push({ text: '← Household',  fn() { switchView('household'); renderCatView('household'); return null; } });
   queuePopup(G.assets && G.assets.length ? 'Your Property & Assets' : 'You own no property yet.', null, choices);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// COMING OF AGE — inheritance and settlements at 18 and 21
+// ═══════════════════════════════════════════════════════════
+
+function fireComingOfAgeEvent(age) {
+  var bg   = G.fatherBg;
+  var will = G.father ? G.father.will : (bg ? bg.will : null);
+
+  if (age === 18) {
+    // At 18: father (if alive) increases pin money; if dead, will may resolve
+    if (G.father && G.father.alive) {
+      // Father increases allowance
+      var increase = Math.max(5, Math.floor((G.pinMoney || 10) * 0.5));
+      G.pinMoney = (G.pinMoney || 10) + increase;
+      addFeedEntry('Your father increases your allowance on your eighteenth birthday.', 'good');
+      queuePopup(
+        'You are eighteen. Your father sends a note with your birthday gift — a small increase to your quarterly allowance, and a few kind words about your prospects.'
+          + '\n\nYour pin money is now \u00a3' + G.pinMoney + ' a season.',
+        'Allowance increased'
+      );
+    } else if (G.father && !G.father.alive && will && will.type !== 'none' && !G.inheritanceReceived18) {
+      // Father dead — partial inheritance at 18
+      G.inheritanceReceived18 = true;
+      var partialValue = Math.floor((will.value || 0) * 0.5);
+      if (partialValue > 0) {
+        G.wealth += partialValue;
+        addFeedEntry('A portion of your father\'s estate reaches you.', 'event');
+        queuePopup(
+          'On your eighteenth birthday, the solicitor arrives. Your father\u2019s will provided for you. A portion of the estate is now yours.'
+            + '\n\n\u00a3' + partialValue + ' is placed in your name.',
+          '+\u00a3' + partialValue
+        );
+        renderStats(); saveGame();
+      }
+    }
+  }
+
+  if (age === 21) {
+    // At 21: full inheritance resolution
+    var inherited = false;
+
+    if (will && will.type !== 'none') {
+      var val = will.value || 0;
+      // Subtract anything already given at 18
+      if (G.inheritanceReceived18) val = Math.floor(val * 0.5);
+
+      if (will.type === 'cash' || will.type === 'settlement') {
+        G.wealth += val;
+        addFeedEntry('Your inheritance is settled.', 'event');
+        queuePopup(
+          'You are twenty-one. The terms of your father\u2019s will are now fully settled.'
+            + '\n\n' + will.desc
+            + '\n\u00a3' + val + ' is now entirely your own.',
+          '+\u00a3' + val
+        );
+        renderStats(); saveGame();
+        inherited = true;
+
+      } else if (will.type === 'investment') {
+        // Add an investment
+        if (!G.investments) G.investments = [];
+        G.investments.push({
+          id:       'inheritance_invest',
+          name:     'Family Investment (Inheritance)',
+          amount:   val,
+          type:     'consols',
+          return:   0.04,
+          seasons:  0,
+        });
+        addFeedEntry('Your inheritance: a share of family investments.', 'event');
+        queuePopup(
+          'Your father\u2019s investments pass to you at twenty-one. '
+            + will.desc
+            + '\n\nA modest income will follow.',
+          'Investment received'
+        );
+        saveGame();
+        inherited = true;
+
+      } else if (will.type === 'property') {
+        // Rare — a small property
+        if (typeof buyAsset === 'function') {
+          var propEntry = {
+            instanceId:   'inherited_' + Date.now(),
+            id:           'cottage',
+            name:         'Inherited Cottage',
+            type:         'estate',
+            price:        val,
+            currentValue: val,
+            baseIncome:   Math.floor(val * 0.05),
+            upkeep:       Math.floor(val * 0.02),
+            condition:    80,
+            improvements: ['kitchen_garden', 'stable_yard'],
+            improvements_done: [],
+            rentedOut:    false,
+          };
+          if (!G.assets) G.assets = [];
+          G.assets.push(propEntry);
+        }
+        addFeedEntry('A small property passes to you on your twenty-first birthday.', 'event');
+        queuePopup(
+          'A small property — a cottage, with a little land — passes to you at twenty-one. '
+            + will.desc
+            + '\n\nIt is not much. But it is yours.',
+          'Property inherited'
+        );
+        saveGame();
+        inherited = true;
+      }
+    }
+
+    if (!inherited) {
+      // Nothing to inherit — but still a moment
+      addFeedEntry('You are twenty-one.', 'event');
+      queuePopup(
+        'You are twenty-one years old. By law, you are a woman of full age. In practice, very little changes. But something in you knows it.'
+      );
+    }
+
+    // Rare bonus: distant relative legacy (5% chance)
+    if (Math.random() < 0.05) {
+      setTimeout(function() { fireDistantLegacy(); }, 800);
+    }
+  }
+}
+
+function fireDistantLegacy() {
+  var names   = ['a great-aunt', 'a distant cousin', 'a godmother', 'an elderly neighbour'];
+  var amounts = [50, 100, 150, 200, 300, 500];
+  var types   = ['cash', 'jewellery', 'books'];
+  var giver   = pick(names);
+  var type    = pick(types);
+  var amount  = pick(amounts);
+
+  if (type === 'cash') {
+    G.wealth += amount;
+    addFeedEntry('A legacy from ' + giver + '.', 'event');
+    queuePopup(
+      'A letter from a solicitor. ' + giver.charAt(0).toUpperCase() + giver.slice(1) + ' — whom you barely knew — has left you \u00a3' + amount + '.'
+        + '\n\nYou sit with the news for a moment. Then you write a grateful letter to no one in particular.',
+      'Legacy: +\u00a3' + amount
+    );
+    renderStats(); saveGame();
+  } else if (type === 'jewellery') {
+    addFeedEntry('A legacy from ' + giver + ': a piece of jewellery.', 'event');
+    queuePopup(
+      giver.charAt(0).toUpperCase() + giver.slice(1) + ' has left you a piece of jewellery in her will. A brooch, a set of pearls — something worn on occasions that mattered to her.'
+        + '\n\nYou will wear it carefully.',
+      'Legacy received'
+    );
+  } else {
+    addFeedEntry('A legacy from ' + giver + ': a small library.', 'event');
+    changeStat('wit', rand(3,8));
+    queuePopup(
+      giver.charAt(0).toUpperCase() + giver.slice(1) + ' has left you her books. Thirty volumes, some of them extraordinary. You spend the next month reading.'
+        + '\n\nSomething shifts in how you think.',
+      'Wit +5'
+    );
+    renderStats(); saveGame();
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// FUTURE TALK — father/guardian conversation at age 13
+// Sets the inheritance type and gives the player a scene
+// ═══════════════════════════════════════════════════════════
+
+function fireFutureTalkConversation() {
+  var father    = G.father;
+  var bg        = G.fatherBg || {};
+  var will      = father ? father.will : (bg.will || null);
+  var guardianName = father && father.alive
+    ? father.name
+    : (G.guardian ? G.guardian.name : 'your guardian');
+  var isFather  = father && father.alive;
+  var relation  = isFather ? 'father' : 'guardian';
+  var wealth    = father ? (father.wealth || bg.fatherWealth || 500) : 500;
+  var trait     = father ? (father.trait || 'reserved') : 'reserved';
+  var profession = bg.profession || 'landed_gentry';
+  var willType  = will ? will.type : 'none';
+
+  // Build the conversation opening based on wealth + will type
+  var opening, scenario, inheritanceLabel;
+
+  if (willType === 'property') {
+    // Property inheritance — conditional or unconditional
+    var conditional = Math.random() < 0.5;
+    if (conditional) {
+      opening = guardianName + ' sets down his book and looks at you over his spectacles.'
+        + ' \u201cYou are thirteen,\u201d he says, as though this is a fact requiring verification.'
+        + ' \u201cIt is time we spoke plainly about your future.\u201d';
+      scenario = '\u201cYour grandfather has made provision. There is a property \u2014 a small one, perfectly respectable \u2014 to be yours upon the event of your marriage to a man of suitable standing. It is not entailed. It will be yours to keep.\u201d\n\nHe pauses. \u201cSuitable stock,\u201d he adds. \u201cYour grandfather was particular about that.\u201d';
+      inheritanceLabel = 'Property on marriage';
+      G.inheritanceCondition = 'marriage';
+    } else {
+      opening = guardianName + ' walks with you in the garden one afternoon and speaks more openly than usual.';
+      scenario = '\u201cYour great-aunt has left you something rather remarkable,\u201d ' + relation + ' says. \u201cA small property, to be yours on your twenty-first birthday. No conditions. No entail. Yours, entirely.\u201d\n\nHe looks at you steadily. \u201cYou will have the rare privilege of independence. I hope you will use it wisely \u2014 but I suspect you will use it well.\u201d';
+      inheritanceLabel = 'Property at 21 \u2014 independent';
+      G.inheritanceCondition = 'none';
+    }
+
+  } else if (willType === 'investment' || wealth > 3000) {
+    opening = guardianName + ' asks you to sit with him after supper. He is formal about it, which means it is important.';
+    scenario = '\u201cThere are investments set aside,\u201d he says. \u201cYour great-aunt \u2014 God rest her \u2014 was a woman of unusual foresight. What she has left you is not a fortune, but it is independence of a kind. Upon your twenty-first birthday, a share in the family\u2019s holdings will pass to you.\u201d\n\nHe adds, more quietly: \u201cA woman with her own income is less at the mercy of circumstance. Your aunt knew that.\u201d';
+    inheritanceLabel = 'Investment at 21';
+    G.inheritanceCondition = 'none';
+
+  } else if (willType === 'settlement' || wealth > 1500) {
+    opening = guardianName + ' calls you to his study. It smells of leather and old paper. He gestures to the chair across from him.';
+    if (profession === 'clergyman') {
+      scenario = '\u201cI will be direct,\u201d he says. \u201cA clergyman\u2019s income does not extend to great settlements. But there is a modest sum \u2014 set aside properly, legally, yours for a marriage settlement. Enough to make you respectable. To attract a man of good character, which is worth more than rank.\u201d\n\nHe folds his hands. \u201cWork hard. Be good. That, at least, is within your power.\u201d';
+    } else {
+      scenario = '\u201cYou should know your situation,\u201d ' + relation + ' says. \u201cA settlement has been arranged \u2014 not lavish, but sound. Upon a suitable marriage, you will bring something to the arrangement. A man worth having will value that.\u201d\n\nHe pauses. \u201cA man not worth having will value only the money. Learn to tell the difference.\u201d';
+    }
+    inheritanceLabel = 'Marriage settlement';
+    G.inheritanceCondition = 'marriage';
+
+  } else {
+    // Very little to leave
+    opening = guardianName + ' finds you reading one evening and sits beside you \u2014 unusual enough that you put the book down.';
+    scenario = '\u201cI want to speak plainly,\u201d ' + relation + ' says. \u201cThere is very little I can settle on you. The estate is entailed. What money there is goes to your brothers. I am sorry for it \u2014 it is unjust, and I know it.\u201d\n\nA pause. \u201cYou are clever and you are good. A suitable husband is your surest path. I do not say this to diminish you. I say it because I want you prepared.\u201d';
+    inheritanceLabel = 'Modest sum';
+    G.inheritanceCondition = 'none';
+  }
+
+  // Trait-based flavour for the opening
+  var closingFlavour = {
+    kind:      ' He squeezes your hand briefly before you leave.',
+    gentle:    ' He looks, briefly, as though he wants to say something more tender. He does not.',
+    reserved:  ' He nods once, as though something has been settled, and returns to his papers.',
+    proud:     ' He straightens in his chair. The interview is over.',
+    witty:     ' \u201cAnd if you could manage to be a little less obvious about being the cleverest person in the room,\u201d he adds, \u201cthat would help considerably.\u201d',
+    ambitious: ' \u201cAim high,\u201d he says simply. \u201cThere is nothing wrong with knowing what you want.\u201d',
+    earnest:   ' He means every word of it. You can tell.',
+    melancholy:' He is quiet for a long time afterward. So are you.',
+    sardonic:  ' \u201cTry not to look quite so horrified,\u201d he says. \u201cIt could be worse.\u201d',
+    charming:  ' He smiles at you with such genuine warmth that you almost forget you have just been told the terms of your life.',
+    haughty:   ' He does not wait for your response. The conversation, evidently, is concluded.',
+    lively:    ' He claps you on the shoulder. \u201cCome now. It is not so bad. You are excellent company and that counts for more than you think.\u201d',
+  };
+  var flavour = closingFlavour[trait] || closingFlavour.reserved;
+
+  addFeedEntry('Your ' + relation + ' speaks to you about your future.', 'event');
+
+  queuePopup(
+    opening + '\n\n' + scenario + flavour,
+    inheritanceLabel,
+    [
+      {
+        text: 'Listen carefully and ask a question',
+        fn() {
+          var closeBonus = rand(5, 12);
+          if (father) father.closeness = Math.min(100, (father.closeness||50) + closeBonus);
+          changeStat('wit', rand(2, 4));
+          queuePopup(
+            relation.charAt(0).toUpperCase() + relation.slice(1) + ' looks pleased \u2014 or at least, less guarded than usual. The question is a good one. He answers honestly.',
+            'Closeness +' + closeBonus
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Accept what you are told quietly',
+        fn() {
+          if (father) father.approval = Math.min(100, (father.approval||55) + rand(3, 8));
+          queuePopup(
+            'You nod. You understand more than you let on. ' + relation.charAt(0).toUpperCase() + relation.slice(1) + ' looks satisfied.',
+            'Approval +5'
+          );
+          saveGame(); return null;
+        },
+      },
+      {
+        text: 'Say what you actually think about it',
+        fn() {
+          var repBonus = rand(2, 5);
+          changeStat('wit', repBonus);
+          // Father reaction depends on trait
+          var opinionReaction = ['kind','earnest','lively','witty'].includes(trait)
+            ? relation.charAt(0).toUpperCase() + relation.slice(1) + ' listens. Then, unexpectedly, he laughs. \u201cYou are right,\u201d he says. \u201cIt is not fair. But I am glad you said so.\u201d'
+            : relation.charAt(0).toUpperCase() + relation.slice(1) + ' is quiet for a moment. \u201cPerhaps,\u201d he says at last. \u201cBut the world is as it is, not as it ought to be.\u201d';
+          queuePopup(opinionReaction, 'Wit +' + repBonus);
+          renderStats(); saveGame(); return null;
+        },
+      },
+    ]
+  );
 }

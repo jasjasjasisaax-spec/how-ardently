@@ -2612,24 +2612,32 @@ function devTitleTap() {
 }
 
 function openDevPanel() {
-  // Only works if a game is in progress
-  if (!G || !G.name) {
-    alert('Start a game first, then use the dev panel.');
-    return;
-  }
+  if (!G || !G.name) { alert('Start a game first.'); return; }
+
+  var info = G.name + ' · Age ' + G.age + ' · ' + G.phase + ' · ' + G.season
+    + '\nWealth: £' + (G.wealth||0).toLocaleString()
+    + (G.pinMoney ? '  Pin money: £' + G.pinMoney + '/season' : '')
+    + (G.fatherBg ? '\nFather: ' + (G.fatherBg.profLabel||'?') + ' · £' + (G.fatherBg.fatherWealth||0) : '')
+    + (G.household ? '\nHousehold tier: ' + G.household.tier + '  Balance: £' + (G.household.accounts.balance||0) : '');
+
   queuePopup(
-    `🛠 DEV PANEL\n${G.name} · Age ${G.age} · ${G.phase} · ${G.season}`,
+    'DEV PANEL\n' + info,
     null,
     [
-      { text: '📊 Set Stats',           fn() { devSetStats();       return null; } },
-      { text: '⚡ Trigger Event',        fn() { devTriggerEvent();   return null; } },
-      { text: '🔀 Jump Life Phase',      fn() { devJumpPhase();      return null; } },
-      { text: '💒 Fast-Track Marriage',  fn() { devFastMarriage();   return null; } },
-      { text: '👶 Add Child Instantly',  fn() { devAddChild();       return null; } },
-      { text: '👥 Introduce All NPCs',   fn() { devIntroAllNPCs();   return null; } },
-      { text: '⏭ Clean Season Advance', fn() { devCleanAdvance();   return null; } },
-      { text: '💀 Kill Family Member',   fn() { devKillFamily();     return null; } },
-      { text: '← Close', fn() { return {}; } },
+      { text: 'Stats & Money',          fn() { devSetStats();          return null; } },
+      { text: 'Jump Life Phase',        fn() { devJumpPhase();         return null; } },
+      { text: 'Trigger Event',          fn() { devTriggerEvent();      return null; } },
+      { text: 'Trigger More Events',    fn() { devTriggerEvent2();     return null; } },
+      { text: 'Fast-Track Marriage',    fn() { devFastMarriage();      return null; } },
+      { text: 'Add Child',              fn() { devAddChild();          return null; } },
+      { text: 'Introduce All NPCs',     fn() { devIntroAllNPCs();      return null; } },
+      { text: 'Clean Season Advance',   fn() { devCleanAdvance();      return null; } },
+      { text: 'Kill Family Member',     fn() { devKillFamily();        return null; } },
+      { text: 'Household Tools',        fn() { devHouseholdTools();    return null; } },
+      { text: 'Inheritance Tools',      fn() { devInheritanceTools();  return null; } },
+      { text: 'Schooling Tools',        fn() { devSchoolingTools();    return null; } },
+      { text: 'Assets & Property',      fn() { devAssetTools();        return null; } },
+      { text: 'Close', fn() { return {}; } },
     ]
   );
 }
@@ -2637,25 +2645,29 @@ function openDevPanel() {
 // ── DEV: Set Stats ──────────────────────────────────────────
 function devSetStats() {
   queuePopup('Set which stat?', null, [
-    { text: `Health (currently ${G.health})`,         fn() { devSetStat('health');     return null; } },
-    { text: `Wit (currently ${G.wit})`,               fn() { devSetStat('wit');        return null; } },
-    { text: `Looks (currently ${G.looks})`,           fn() { devSetStat('looks');      return null; } },
-    { text: `Reputation (currently ${G.reputation})`, fn() { devSetStat('reputation'); return null; } },
-    { text: `Wealth (currently £${G.wealth})`,        fn() { devSetStat('wealth');     return null; } },
-    { text: `Age (currently ${G.age})`,               fn() { devSetStat('age');        return null; } },
-    { text: '← Back', fn() { openDevPanel(); return null; } },
+    { text: 'Health (' + G.health + ')',        fn() { devSetStat('health');     return null; } },
+    { text: 'Wit (' + G.wit + ')',              fn() { devSetStat('wit');        return null; } },
+    { text: 'Looks (' + G.looks + ')',          fn() { devSetStat('looks');      return null; } },
+    { text: 'Reputation (' + G.reputation + ')',fn() { devSetStat('reputation'); return null; } },
+    { text: 'Faith (' + G.faith + ')',          fn() { devSetStat('faith');      return null; } },
+    { text: 'Wealth £' + (G.wealth||0),    fn() { devSetStat('wealth');     return null; } },
+    { text: 'Income £' + (G.income||0),    fn() { devSetStat('income');     return null; } },
+    { text: 'Pin Money £' + (G.pinMoney||0),fn() { devSetStat('pinMoney'); return null; } },
+    { text: 'Age (' + G.age + ')',              fn() { devSetStat('age');        return null; } },
+    { text: '← Dev Panel', fn() { openDevPanel(); return null; } },
   ]);
 }
 
 function devSetStat(stat) {
-  const val = prompt(`Set ${stat} to:`, G[stat]);
-  if (val === null) { openDevPanel(); return; }
-  const n = parseInt(val);
-  if (isNaN(n)) { alert('Enter a number.'); devSetStats(); return; }
-  G[stat] = stat === 'wealth' ? n : Math.max(0, Math.min(100, n));
-  addFeedEntry(`[DEV] ${stat} set to ${G[stat]}.`, 'event');
-  renderStats(); saveGame();
-  queuePopup(`${stat} set to ${G[stat]}.`, null, null, () => devSetStats());
+  gamePrompt('Set ' + stat + ' to:', String(G[stat] || 0), function(val) {
+    var n = parseInt(val);
+    if (isNaN(n)) { queuePopup('Enter a number.'); devSetStats(); return; }
+    var noClamp = ['wealth','income','pinMoney','age'];
+    G[stat] = noClamp.includes(stat) ? n : Math.max(0, Math.min(100, n));
+    addFeedEntry('[DEV] ' + stat + ' set to ' + G[stat] + '.', 'event');
+    renderStats(); saveGame();
+    queuePopup(stat + ' set to ' + G[stat] + '.', null, null, function(){ devSetStats(); });
+  }, function() { openDevPanel(); });
 }
 
 // ── DEV: Trigger Event ──────────────────────────────────────
@@ -2728,16 +2740,31 @@ function devTriggerEvent2() {
 // ── DEV: Jump Phase ─────────────────────────────────────────
 function devJumpPhase() {
   queuePopup('Jump to which life phase?', null, [
-    { text: '🧒 Childhood (age 8)',   fn() { G.phase='childhood'; G.age=8;  G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to childhood.','event'); queuePopup('Jumped to childhood, age 8.', null, null, ()=>devJumpPhase()); return null; } },
-    { text: '🌸 Debut (age 16)',      fn() { G.phase='debut';     G.age=16; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to debut.','event');    queuePopup('Jumped to debut, age 16.',    null, null, ()=>devJumpPhase()); return null; } },
-    { text: 'Adult (age 20)',      fn() { G.phase='adult';     G.age=20; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to adult.','event');    queuePopup('Jumped to adult, age 20.',    null, null, ()=>devJumpPhase()); return null; } },
-    { text: '👴 Elder (age 60)',      fn() { G.phase='elder';     G.age=60; G.season='Autumn'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to elder.','event');    queuePopup('Jumped to elder, age 60.',    null, null, ()=>devJumpPhase()); return null; } },
-    { text: '🔢 Set age manually',    fn() {
-      const v = prompt('Set age to:', G.age);
-      if (v) { G.age = parseInt(v)||G.age; renderStats(); saveGame(); }
-      openDevPanel(); return null;
-    }},
-    { text: '← Back', fn() { openDevPanel(); return null; } },
+    { text: 'Newborn (age 0)',     fn() { G.phase='childhood'; G.age=0;  G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to newborn.','event'); saveGame(); queuePopup('Age 0 — Newborn.'); return null; } },
+    { text: 'Childhood (age 8)',   fn() { G.phase='childhood'; G.age=8;  G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to childhood.','event'); saveGame(); queuePopup('Age 8 — Childhood.'); return null; } },
+    { text: 'Future Talk (age 13)',fn() {
+      G.phase='childhood'; G.age=13; G.season='Spring';
+      G.futureTalkDone = false; // reset so it fires
+      buildNav(); renderStats(); saveGame();
+      setTimeout(function(){ fireFutureTalkConversation(); }, 300);
+      return null;
+    } },
+    { text: 'Debut prep (age 16)', fn() { G.phase='childhood'; G.age=16; G.season='Spring'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to pre-debut.','event'); saveGame(); queuePopup('Age 16 — Debut year.'); return null; } },
+    { text: 'Adult (post-debut)',  fn() {
+      G.phase='adult'; G.age=18; G.season='Spring'; G.debutDone=true;
+      if (!G.suitorPool) G.suitorPool = [];
+      buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to adult.','event'); saveGame();
+      switchView('society'); renderCatView('society');
+      return null;
+    } },
+    { text: 'Married adult',       fn() {
+      if (!G.isMarried) { devFastMarriage(); return null; }
+      G.phase='adult'; G.age=25; G.season='Spring';
+      buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to married adult.','event'); saveGame();
+      return null;
+    } },
+    { text: 'Elder (age 55)',      fn() { G.phase='elder'; G.age=55; G.season='Autumn'; buildNav(); renderStats(); addFeedEntry('[DEV] Jumped to elder.','event'); saveGame(); queuePopup('Age 55 — Elder.'); return null; } },
+    { text: '← Dev Panel', fn() { openDevPanel(); return null; } },
   ]);
 }
 
@@ -4137,6 +4164,206 @@ function fireFutureTalkConversation() {
           renderStats(); saveGame(); return null;
         },
       },
+    ]
+  );
+}
+
+
+// ── DEV: Household Tools ────────────────────────────────────
+
+function devHouseholdTools() {
+  if (!G.isMarried) {
+    queuePopup('Household tools require marriage. Use Fast-Track Marriage first.', null,
+      [{ text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } }]);
+    return;
+  }
+  if (!G.household && typeof initHousehold === 'function') initHousehold();
+  var h = G.household;
+  var bal = h ? h.accounts.balance : 0;
+  var tier = h ? h.tier : 'none';
+  queuePopup(
+    'Household Tools\nTier: ' + tier + '  Balance: \u00a3' + bal,
+    null,
+    [
+      { text: 'Add \u00a3500 to household budget', fn() {
+        if (!h) return null;
+        h.accounts.balance = (h.accounts.balance||0) + 500;
+        addAccountEntry('dev', '[DEV] Budget added', 500);
+        queuePopup('Household balance +\u00a3500.'); saveGame(); return null;
+      }},
+      { text: 'Set tier: humble',       fn() { if(h){h.tier='humble';    saveGame();} queuePopup('Tier set: humble.');      return null; } },
+      { text: 'Set tier: comfortable',  fn() { if(h){h.tier='comfortable';saveGame();} queuePopup('Tier set: comfortable.'); return null; } },
+      { text: 'Set tier: grand',        fn() { if(h){h.tier='grand';     saveGame();} queuePopup('Tier set: grand.');       return null; } },
+      { text: 'Hire all staff (dev)',   fn() {
+        if (!h) return null;
+        var roles = ['housekeeper','cook','ladysMaid','butler','nursemaid','wetNurse','governess','coachman'];
+        roles.forEach(function(r) {
+          if (!h.staff[r].hired) {
+            h.staff[r] = { hired:true, name:'[Dev] ' + r, quality:80, wage:0, happiness:90 };
+          }
+        });
+        h.staff.footmen.count = 2; h.staff.footmen.wage = 0;
+        if(typeof recalcHouseholdStats==='function') recalcHouseholdStats();
+        addFeedEntry('[DEV] All staff hired.', 'event');
+        saveGame(); queuePopup('All staff hired at no cost.'); return null;
+      }},
+      { text: 'Reset household',        fn() {
+        G.household = null;
+        if(typeof initHousehold==='function') initHousehold();
+        saveGame(); queuePopup('Household reset and reinitialised.'); return null;
+      }},
+      { text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } },
+    ]
+  );
+}
+
+// ── DEV: Inheritance Tools ──────────────────────────────────
+
+function devInheritanceTools() {
+  queuePopup(
+    'Inheritance & Future Talk Tools',
+    null,
+    [
+      { text: 'Fire future talk now', fn() {
+        G.futureTalkDone = false;
+        if(typeof fireFutureTalkConversation==='function') fireFutureTalkConversation();
+        return null;
+      }},
+      { text: 'Fire age-18 inheritance', fn() {
+        if(typeof fireComingOfAgeEvent==='function') fireComingOfAgeEvent(18);
+        return null;
+      }},
+      { text: 'Fire age-21 inheritance', fn() {
+        if(typeof fireComingOfAgeEvent==='function') fireComingOfAgeEvent(21);
+        return null;
+      }},
+      { text: 'Fire distant legacy', fn() {
+        if(typeof fireDistantLegacy==='function') fireDistantLegacy();
+        return null;
+      }},
+      { text: 'Set will: cash \u00a3500', fn() {
+        var w = {type:'cash', value:500, desc:'\u00a3500 set aside for your future.'};
+        if(G.father) G.father.will = w;
+        if(G.fatherBg) G.fatherBg.will = w;
+        saveGame(); queuePopup('Will set to: cash \u00a3500.'); return null;
+      }},
+      { text: 'Set will: property', fn() {
+        var w = {type:'property', value:800, desc:'A small cottage, to be yours.'};
+        if(G.father) G.father.will = w;
+        if(G.fatherBg) G.fatherBg.will = w;
+        saveGame(); queuePopup('Will set to: property.'); return null;
+      }},
+      { text: 'Set will: investment', fn() {
+        var w = {type:'investment', value:600, desc:'A share of the family investments.'};
+        if(G.father) G.father.will = w;
+        if(G.fatherBg) G.fatherBg.will = w;
+        saveGame(); queuePopup('Will set to: investment.'); return null;
+      }},
+      { text: 'Show father background', fn() {
+        var bg = G.fatherBg;
+        var info = bg
+          ? 'Profession: ' + bg.profLabel
+            + '\nWealth: \u00a3' + bg.fatherWealth
+            + '\nTitle rank: ' + bg.titleRank
+            + '\nPin money: \u00a3' + bg.pinMoney + '/season'
+            + '\nWill: ' + (bg.will ? bg.will.type + ' \u00a3' + bg.will.value : 'none')
+          : 'No fatherBg on G.';
+        queuePopup(info); return null;
+      }},
+      { text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } },
+    ]
+  );
+}
+
+// ── DEV: Schooling Tools ────────────────────────────────────
+
+function devSchoolingTools() {
+  queuePopup(
+    'Schooling & Education Tools\nSchooling: ' + (G.schooling ? G.schooling.type : 'none'),
+    null,
+    [
+      { text: 'Max all edu stats',  fn() {
+        if (!G.eduStats) { if(typeof initEducation==='function') initEducation(); }
+        if (G.eduStats) {
+          ['literacy','reason','faith','decorum'].forEach(function(grp) {
+            Object.keys(G.eduStats[grp]).forEach(function(sub) {
+              if (sub !== 'total') G.eduStats[grp][sub] = 85;
+            });
+            if(typeof recalcEduTotals==='function') recalcEduTotals();
+          });
+        }
+        renderStats(); saveGame(); queuePopup('All education stats set to 85.'); return null;
+      }},
+      { text: 'Introduce all schoolmates', fn() {
+        if (!G.schoolmates || !G.schoolmates.length) {
+          if(typeof generateSchoolmateCohort==='function') generateSchoolmateCohort('boarding');
+        }
+        (G.schoolmates||[]).forEach(function(s) {
+          s.introduced = true;
+          if (s.closeness < 20) s.closeness = rand(20,45);
+          s.status = s.status === 'unknown' ? 'acquaintance' : s.status;
+        });
+        saveGame(); queuePopup('All schoolmates introduced.'); return null;
+      }},
+      { text: 'Fire schooling popup', fn() {
+        G.schoolingOffered = false;
+        G.age = 4;
+        queuePopup(G.name + ' is four years old. It is time to think about her education.', null, [
+          { text: 'Choose schooling', fn() { if(typeof openSchoolingChoice==='function') openSchoolingChoice(); return null; }},
+          { text: 'Later', fn() { return {}; } },
+        ]);
+        return null;
+      }},
+      { text: 'Trigger talent discovery', fn() {
+        if(typeof checkTalentDiscovery==='function') checkTalentDiscovery('decorum','music');
+        return null;
+      }},
+      { text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } },
+    ]
+  );
+}
+
+// ── DEV: Asset Tools ────────────────────────────────────────
+
+function devAssetTools() {
+  var assetCount = (G.assets||[]).length;
+  var investCount = (G.investments||[]).length;
+  queuePopup(
+    'Assets & Property Tools\n' + assetCount + ' asset(s)  ' + investCount + ' investment(s)',
+    null,
+    [
+      { text: 'Add grand estate (free)', fn() {
+        if (!G.assets) G.assets = [];
+        G.assets.push({
+          instanceId: 'dev_estate_' + Date.now(),
+          id: 'grand_estate', name: 'Dev Grand Estate', type: 'estate',
+          price: 20000, currentValue: 20000, baseIncome: 1200,
+          upkeep: 400, condition: 100, improvements: ['home_farm','tenant_cottages','walled_garden','stables','pleasure_grounds','folly'],
+          improvements_done: [], rentedOut: false,
+        });
+        if(typeof refreshHouseholdTier==='function') refreshHouseholdTier();
+        saveGame(); queuePopup('Grand estate added.'); return null;
+      }},
+      { text: 'Add cottage (free)', fn() {
+        if (!G.assets) G.assets = [];
+        G.assets.push({
+          instanceId: 'dev_cottage_' + Date.now(),
+          id: 'cottage', name: 'Dev Cottage', type: 'estate',
+          price: 800, currentValue: 800, baseIncome: 40,
+          upkeep: 15, condition: 100, improvements: ['kitchen_garden','stable_yard'],
+          improvements_done: [], rentedOut: false,
+        });
+        saveGame(); queuePopup('Cottage added.'); return null;
+      }},
+      { text: 'Add investment (Consols \u00a3500)', fn() {
+        if (!G.investments) G.investments = [];
+        G.investments.push({ id:'dev_consols', name:'Dev Consols', amount:500, type:'consols', return:0.04, seasons:0 });
+        saveGame(); queuePopup('Investment added.'); return null;
+      }},
+      { text: 'Clear all assets',  fn() {
+        G.assets = []; saveGame(); queuePopup('All assets cleared.'); return null;
+      }},
+      { text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } },
     ]
   );
 }

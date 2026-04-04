@@ -33,14 +33,17 @@ const FATHER_PROFESSIONS = [
   { id:'antiquary',     label:'a gentleman of scholarly pursuits', wealthMult:0.4, witBonus:20, faithBonus:5  },
 ];
 
-const REP_TIERS = [
-  { min:80, label:'Toast of the Ton' },
-  { min:65, label:'Fashionable'      },
-  { min:50, label:'Well Regarded'    },
-  { min:35, label:'Respectable'      },
-  { min:20, label:'Unremarkable'     },
-  { min:0,  label:'Nobody'           },
+// Social standing tiers — composite score, not just reputation
+const STANDING_TIERS = [
+  { min:85, label:'Toast of the Ton'     },
+  { min:70, label:'First Circles'        },
+  { min:55, label:'Good Society'         },
+  { min:40, label:'Respectable'          },
+  { min:25, label:'Of Little Consequence'},
+  { min:0,  label:'Beneath Notice'       },
 ];
+// REP_TIERS kept as alias for backward compat
+const REP_TIERS = STANDING_TIERS;
 
 // Life phases in order
 // childhood → debut → adult → married (overlaps adult) → elder
@@ -87,9 +90,96 @@ const rand   = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const pick   = arr    => arr[Math.floor(Math.random() * arr.length)];
 const clamp  = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// Calculate composite social standing score (0-100)
+// Reputation is a minor modifier — wealth, title, assets drive the base
+function standingScore() {
+  var score = 0;
+
+  // ── Title rank (0-5) — the bedrock of standing ──
+  // Each rank gives a significant, near-permanent floor
+  var titleRank = 0;
+  if (G.spouse && G.spouse.titleRank) titleRank = G.spouse.titleRank;
+  else if (G.title && G.title.rank)   titleRank = G.title.rank;
+  else if (G.fatherBg && G.fatherBg.titleRank) titleRank = G.fatherBg.titleRank;
+
+  var titleContrib = [0, 20, 32, 45, 60, 80][Math.min(5, titleRank)] || 0;
+  score += titleContrib;
+
+  // ── Wealth ── (logarithmic — doubling wealth gives diminishing returns)
+  var wealth = G.isMarried && G.spouse ? (G.spouse.wealth||0) : (G.income||0);
+  // Also count asset income
+  if (G.assets) {
+    G.assets.forEach(function(a) { wealth += (a.baseIncome||0) * 4; }); // annualise
+  }
+  var wealthContrib = 0;
+  if      (wealth >= 10000) wealthContrib = 30;
+  else if (wealth >= 5000)  wealthContrib = 24;
+  else if (wealth >= 2000)  wealthContrib = 18;
+  else if (wealth >= 800)   wealthContrib = 12;
+  else if (wealth >= 300)   wealthContrib = 6;
+  else if (wealth >= 100)   wealthContrib = 2;
+  score += wealthContrib;
+
+  // ── Assets ── (property signals permanence)
+  if (G.assets) {
+    G.assets.forEach(function(a) {
+      if (a.type === 'estate') {
+        if (a.id === 'grand_estate') score += 12;
+        else if (a.id === 'manor')   score += 8;
+        else if (a.id === 'townhouse')score += 4;
+        else                          score += 2;
+      } else if (a.type === 'carriage') {
+        score += 1;
+      }
+    });
+  }
+
+  // ── Connections ── (friends in high places)
+  var highFriends = (G.npcs||[]).filter(function(n) {
+    return n.introduced && n.closeness >= 50 && !n.isRival;
+  }).length;
+  score += Math.min(8, Math.floor(highFriends / 2)); // up to +8
+
+  // ── Father's background (birth standing, fades with marriage) ──
+  if (!G.isMarried && G.fatherBg) {
+    var birthContrib = [0,8,14,20,28,40][Math.min(5, G.fatherBg.titleRank||0)] || 0;
+    score += birthContrib;
+    // Profession adds modest standing
+    var profStanding = {
+      landed_gentry:5, clergyman:3, physician:4, lawyer:4,
+      naval_officer:5, army_officer:5, merchant:2, banker:3, antiquary:3,
+    };
+    score += profStanding[G.fatherBg.profession||'landed_gentry'] || 3;
+  }
+
+  // ── Reputation — minor modifier only ──
+  // Rep can nudge you ±8 points but cannot move you between tiers alone
+  var rep = G.reputation || 50;
+  var repContrib = Math.round(((rep - 50) / 50) * 8); // -8 to +8
+  score += repContrib;
+
+  // ── Scandal penalty ── (hard to shake)
+  var scandals = G.scandals || 0;
+  if (scandals >= 3) score -= 15;
+  else if (scandals >= 2) score -= 8;
+  else if (scandals >= 1) score -= 3;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// Standing tier label from composite score
+function standingTier() {
+  var score = standingScore();
+  for (var i = 0; i < STANDING_TIERS.length; i++) {
+    if (score >= STANDING_TIERS[i].min) return STANDING_TIERS[i].label;
+  }
+  return 'Beneath Notice';
+}
+
+// Backward-compat wrapper — old code calls repTier(G.reputation)
+// Now ignores the argument and uses composite score
 function repTier(rep) {
-  for (const t of REP_TIERS) if (rep >= t.min) return t.label;
-  return 'Nobody';
+  return standingTier();
 }
 
 function fullName(title, first, last) {
@@ -508,16 +598,35 @@ function changeStat(stat, delta) {
 }
 
 function checkRepTierCross(before, after) {
-  const tierBefore = repTier(before);
-  const tierAfter  = repTier(after);
+  // Check if social standing tier changed — uses composite score now
+  // Standing changes are rarer and more significant than old rep tier crossings
+  if (typeof standingTier !== 'function') return;
+  var tierBefore = G._lastStandingTier || standingTier();
+  var tierAfter  = standingTier();
+  G._lastStandingTier = tierAfter;
   if (tierBefore !== tierAfter) {
-    const up = after > before;
-    const msg = up
-      ? `You are now considered ${tierAfter}.`
-      : `You are now considered ${tierAfter}. Your mother is not pleased.`;
-    // Queue a flavour popup via the UI layer
+    var score = standingScore();
+    var up = score > (G._lastStandingScore||50);
+    G._lastStandingScore = score;
+    var msgs = {
+      up: {
+        'Toast of the Ton': 'Society has taken notice. You are now spoken of as Toast of the Ton.',
+        'First Circles':    'You have risen into the first circles of society.',
+        'Good Society':     'You are now considered good society.',
+        'Respectable':      'Your standing has recovered. You are once again considered respectable.',
+      },
+      down: {
+        'Of Little Consequence': 'Your standing has slipped. You are of little consequence in society.',
+        'Beneath Notice':        'Your standing has fallen very low. Society has largely ceased to notice you.',
+        'Respectable':           'Your position has declined. Your mother is not pleased.',
+        'Good Society':          'You have slipped somewhat in estimation.',
+      },
+    };
+    var msg = (up ? msgs.up[tierAfter] : msgs.down[tierAfter])
+      || (up ? 'You are now considered ' + tierAfter + '.'
+             : 'Your standing has changed. You are now considered ' + tierAfter + '.');
     if (typeof queuePopup === 'function') {
-      queuePopup(msg, up ? '★ ' + tierAfter : tierAfter, null, null, true);
+      queuePopup(msg, up ? tierAfter : tierAfter, null, null, true);
     }
   }
 }
@@ -766,13 +875,13 @@ function advanceSeason() {
 
   // ── Reputation decay (social standing requires maintenance) ──
   if (G.phase !== 'childhood' && isNewYear) {
-    const tier = repTier(G.reputation);
-    // Higher tiers decay faster — the Ton is demanding
-    const decay = tier === 'Toast of the Ton' ? rand(3,6)
-                : tier === 'Fashionable'       ? rand(2,4)
-                : tier === 'Well Regarded'      ? rand(1,3)
-                : tier === 'Respectable'        ? rand(0,2)
-                : 0; // Nobody and below don't decay further
+    const tier = standingTier ? standingTier() : repTier(G.reputation);
+    // Higher standing = more scrutiny = more reputation maintenance required
+    const decay = tier === 'Toast of the Ton'      ? rand(3,6)
+                : tier === 'First Circles'          ? rand(2,5)
+                : tier === 'Good Society'           ? rand(1,3)
+                : tier === 'Respectable'            ? rand(0,2)
+                : 0;
     if (decay > 0) changeStat('reputation', -decay);
   }
 

@@ -250,7 +250,9 @@ function handleAction(key) {
 // ── STAT HEADER ────────────────────────────────────────────
 
 function renderStats() {
-  const tier   = repTier(G.reputation);
+  // Standing tier uses composite score; repTier is now a wrapper for standingTier
+  const tier  = typeof standingTier === 'function' ? standingTier() : repTier(G.reputation);
+  const score = typeof standingScore === 'function' ? standingScore() : G.reputation;
   const phase  = G.phase === 'childhood'
     ? (G.age === 0 ? 'Newborn'
       : G.age < 2  ? 'Infant · Age ' + G.age
@@ -288,7 +290,7 @@ function renderStats() {
       ${bar('Health', G.health,     '#8b2020')}
       ${bar('Looks',  G.looks,      '#7a4f2d')}
       ${bar('Wit',    G.wit,        '#2d5016')}
-      ${bar('Rep',    G.reputation, '#b8860b')}
+      ${bar('Standing', score, '#b8860b')}
     </div>
     <div class="sh-bot">
       <span class="wv">£${G.wealth.toLocaleString()}${typeof netAssetIncome==='function'&&G.assets&&G.assets.length?' (£'+netAssetIncome()+'/s)':''}</span>

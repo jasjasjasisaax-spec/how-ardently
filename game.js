@@ -653,6 +653,74 @@ function advanceSeason() {
       G.wealth += G.pinMoney;
       if (G.age >= 6) events.push({ text: 'Your father’s quarterly allowance arrives. £' + G.pinMoney + '.', type: 'good' });
     }
+    // ── Age up everyone else ──────────────────────────────
+    // Siblings
+    G.siblings.forEach(function(s) { if (s.alive) s.age = (s.age||0) + 1; });
+
+    // Children
+    G.children.forEach(function(c) {
+      if (c.alive !== false) {
+        c.age = (c.age||0) + 1;
+        // Children's children (grandchildren)
+        if (c.children) c.children.forEach(function(gc) { gc.age = (gc.age||0) + 1; });
+      }
+    });
+
+    // NPCs
+    G.npcs.forEach(function(n) { if (n.alive !== false) n.age = (n.age||0) + 1; });
+    G.npcPool.forEach(function(n) { if (n.alive !== false) n.age = (n.age||0) + 1; });
+
+    // Parents & spouse
+    if (G.mother && G.mother.alive) G.mother.age = (G.mother.age||0) + 1;
+    if (G.father && G.father.alive) G.father.age = (G.father.age||0) + 1;
+    if (G.spouse) {
+      G.spouse.age = (G.spouse.age||0) + 1;
+      // Spouse family
+      if (G.spouse.parents) G.spouse.parents.forEach(function(p) { if(p.alive) p.age = (p.age||0) + 1; });
+      if (G.spouse.siblings) G.spouse.siblings.forEach(function(s) { s.age = (s.age||0) + 1; });
+    }
+
+    // Schoolmates
+    if (G.schoolmates) G.schoolmates.forEach(function(s) { s.age = (s.age||0) + 1; });
+
+    // ── Pets age and can die ──────────────────────────────
+    var LIFESPAN = { dog:14, cat:15, rabbit:8, spaniel:13, parrot:50, pony:25 };
+    G.pets.forEach(function(pet) {
+      if (!pet.alive) return;
+      pet.age = (pet.age||0) + 1;
+      var lifespan = LIFESPAN[pet.animal] || 12;
+
+      // Health decays with age in latter half of life
+      if (pet.age > Math.floor(lifespan * 0.6)) {
+        var decay = rand(2, 6);
+        pet.health = Math.max(0, (pet.health||100) - decay);
+      }
+
+      // Death check — rises sharply near end of lifespan
+      var ageRatio = pet.age / lifespan;
+      var deathChance = ageRatio > 1.0 ? 0.6
+                      : ageRatio > 0.85 ? 0.25
+                      : ageRatio > 0.7  ? 0.08
+                      : pet.health < 20  ? 0.15
+                      : 0;
+
+      if (deathChance > 0 && Math.random() < deathChance) {
+        pet.alive = false;
+        events.push({
+          text: pet.name + ' has died.',
+          type: 'bad',
+          popup: {
+            text: pick([
+              pet.name + ' dies quietly one morning. You find them in their usual spot, as though sleeping.',
+              'You lose ' + pet.name + ' this year. They were a good companion.',
+              pet.name + ' passes away. The house feels different without them.',
+              'After ' + pet.age + ' years, ' + pet.name + ' is gone. It is a small grief but a real one.',
+            ]),
+          },
+        });
+      }
+    });
+
   } else {
     // Autumn: smaller income payment
     const assetNetA = typeof netAssetIncome === 'function' ? netAssetIncome() : 0;

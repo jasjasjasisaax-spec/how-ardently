@@ -744,7 +744,7 @@ function getCatConfig(id) {
         { label: 'Pets', items: [
           { key:'adopt_pet', icon:'🐾', name:'Acquire a Pet', hint:(G.pets||[]).filter(p=>p.alive).length ? 'You already have pets' : 'A companion for life' },
           ...((G.pets||[]).filter(p=>p.alive).map(p => ({
-            key:'pet_'+p.name, icon:p.emoji||'🐾', name:p.name, hint:`Your ${p.animal} · Health ${p.health}`
+            key:'pet_'+p.name, icon:p.emoji||'\u{1F43E}', name:p.name, hint:'Your ' + p.animal + ' · Age ' + (p.age||0) + ' · Health ' + (p.health||100)
           }))),
         ]},
       ],

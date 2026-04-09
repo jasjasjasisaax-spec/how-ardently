@@ -203,6 +203,10 @@ function ageFamilyMembers() {
     if (Math.random() < Math.min(fatherRisk, 0.4)) {
       G.father.alive = false;
       deaths.push({ relation: 'father', name: G.father.name, processInheritance: true });
+      // Settlement may reduce if father dies before marriage — guardian handles less
+      if (!G.isMarried && G.expectedSettlement > 0) {
+        G.expectedSettlement = Math.floor(G.expectedSettlement * 0.5);
+      }
     }
   }
   if (G.mother && G.mother.alive) {
@@ -252,6 +256,17 @@ function ageChildren() {
     }
     if (child.age === 18 && child.gender === 'daughter') {
       milestones.push({ child, event: 'debut', needsChoice: false });
+    }
+    // Marriage arrangement age — daughters 18+, sons 21+
+    if (child.age === 18 && child.gender === 'daughter' && !child.isMarried && !child.marriageArranged) {
+      milestones.push({ child, event: 'marriage_age', needsChoice: true });
+    }
+    if (child.age === 21 && child.gender === 'son' && !child.isMarried && !child.marriageArranged) {
+      milestones.push({ child, event: 'marriage_age', needsChoice: true });
+    }
+    // Adult children can eventually marry autonomously if player doesn't arrange
+    if (child.age >= 22 && !child.isMarried && !child.marriageArranged && Math.random() < 0.15) {
+      milestones.push({ child, event: 'married_independently', needsChoice: false });
     }
   }
   return milestones;
@@ -510,6 +525,16 @@ function newGame(name, gender, rankId) {
     wealth: 0,
     income: 0,
     pinMoney: fatherBg.pinMoney,  // seasonal allowance from father
+    fashion: 20,  // Fashion stat (0-100) — starts low, built through society and the modiste
+    expectedSettlement: 0,  // Prospective dowry — visible to suitors, affects eligibility
+    dynastyName: fatherBg ? fatherBg.surname : '',  // Family name for dynasty tracking — starts low, built through society and the modiste
+    fertility: (function() {
+      // Mostly normal, rare extremes — player never sees the number directly
+      var r = Math.random();
+      if (r < 0.04) return rand(5, 20);   // ~4% very low fertility
+      if (r < 0.08) return rand(85, 100); // ~4% very high fertility
+      return rand(45, 80);                // ~92% normal range
+    })(),
 
     // Life phase
     phase: 'childhood',  // childhood | debut | adult | elder
@@ -569,6 +594,12 @@ function newGame(name, gender, rankId) {
   };
 
   generateFamily();
+  if (typeof calculateFatherSettlement === 'function') G.expectedSettlement = calculateFatherSettlement();
+  // Calculate expected settlement — based on father's wealth and profession
+  // This is what suitors are told; it affects who proposes and how
+  if (typeof calculateFatherSettlement === 'function') {
+    G.expectedSettlement = calculateFatherSettlement();
+  }
   initTitle(rankId);
   initWill();
   if (typeof initEducation === 'function') initEducation();
@@ -762,17 +793,16 @@ function advanceSeason() {
       G.wealth += G.pinMoney;
       if (G.age >= 6) events.push({ text: 'Your father’s quarterly allowance arrives. £' + G.pinMoney + '.', type: 'good' });
     }
+    // Natural fertility decline with age
+    if (typeof ageFertility === 'function') ageFertility();
+
     // ── Age up everyone else ──────────────────────────────
     // Siblings
     G.siblings.forEach(function(s) { if (s.alive) s.age = (s.age||0) + 1; });
 
-    // Children
+    // Children aged by ageChildren() above — just age grandchildren here
     G.children.forEach(function(c) {
-      if (c.alive !== false) {
-        c.age = (c.age||0) + 1;
-        // Children's children (grandchildren)
-        if (c.children) c.children.forEach(function(gc) { gc.age = (gc.age||0) + 1; });
-      }
+      if (c.children) c.children.forEach(function(gc) { gc.age = (gc.age||0) + 1; });
     });
 
     // NPCs
@@ -831,6 +861,27 @@ function advanceSeason() {
     });
 
   } else {
+    // Bespoke order delivery — fires when the right season arrives
+    if (G._bespokeOrder && G._bespokeOrder.deliverySeason === G.season) {
+      var order = G._bespokeOrder;
+      G._bespokeOrder = null;
+      G.fashion = Math.min(100, (G.fashion||0) + order.fashionBonus);
+      if (!G.wardrobe) G.wardrobe = [];
+      G.wardrobe.push({ id:'bespoke_' + Date.now(), name:'Bespoke ' + order.type, type:'bespoke', purchasedSeason: G.season });
+      events.push({
+        text: 'Your bespoke ' + order.type + ' has arrived from the modiste.',
+        type: 'good',
+        popup: {
+          text: 'A package arrives from the modiste. Your bespoke ' + order.type + ' is everything she promised. You try it on immediately.',
+          badge: 'Fashion +' + order.fashionBonus + '  Looks +' + order.looksBonus,
+        },
+      });
+    }
+    // Fashion decays slightly each Autumn — the Ton moves on
+    if (G.fashion !== undefined && G.fashion > 0) {
+      var fashionDecay = rand(1, 3);
+      G.fashion = Math.max(0, G.fashion - fashionDecay);
+    }
     // Autumn: smaller income payment
     const assetNetA = typeof netAssetIncome === 'function' ? netAssetIncome() : 0;
     G.wealth += Math.floor(G.income / 4) + Math.floor(assetNetA / 2);
@@ -1002,6 +1053,95 @@ function advanceSeason() {
     events.push({ randomEvent: true });
   }
 
+  // ── Autonomous proposal (unmarried adult female) ──────────
+  if (
+    G.phase !== 'childhood' &&
+    G.gender === 'female' &&
+    !G.isMarried &&
+    G.age >= 17 &&
+    G.age <= 35
+  ) {
+    // Base chance increases with age (societal pressure) and eligibility
+    var eligScore  = G.eligibility || 0;
+    var settlement = G.expectedSettlement || 0;
+    var ageBonus   = Math.max(0, G.age - 20) * 0.015;
+    var propChance = 0.10 + (eligScore / 100) * 0.15 + ageBonus;
+    propChance = Math.min(0.40, propChance);
+
+    // Fortune hunter chance — rises steeply with settlement size
+    // Separate roll: a fortune hunter may appear instead of or alongside a genuine suitor
+    var fortuneHunterChance = settlement >= 1000 ? 0.25
+                            : settlement >= 500  ? 0.15
+                            : settlement >= 250  ? 0.08
+                            : settlement >= 100  ? 0.04
+                            : 0;
+    if (fortuneHunterChance > 0 && Math.random() < fortuneHunterChance && !G._fortuneHunterThisSeason) {
+      G._fortuneHunterThisSeason = true;
+      events.push({ fortuneHunter: { settlement: settlement } });
+    } else {
+      G._fortuneHunterThisSeason = false;
+    }
+
+    if (Math.random() < propChance) {
+      // Pick from suitor pool first, then generate fresh
+      var poolEntry = G.suitorPool && G.suitorPool.find(function(e) {
+        return !e.declined && e.suitor && !e.proposed;
+      });
+      var proposer;
+      if (poolEntry) {
+        proposer = poolEntry.suitor;
+        poolEntry.proposed = true;
+      } else {
+        // Generate a fresh suitor whose quality matches standing
+        var standScore = typeof standingScore === 'function' ? standingScore() : 50;
+        proposer = null; // will be generated in UI handler
+        events.push({ autonomousProposal: { fromPool: false, standScore: standScore } });
+      }
+      if (proposer) {
+        events.push({ autonomousProposal: { suitor: proposer, fromPool: true } });
+      }
+    }
+  }
+
+  // ── Autonomous pregnancy (married female, each Spring) ────
+  if (
+    isNewYear &&
+    G.gender === 'female' &&
+    G.isMarried &&
+    !G.pregnancy &&
+    G.age >= 18 &&
+    G.age <= 42
+  ) {
+    // Chance each Spring — falls with age and fertility
+    var fertility = G.fertility !== undefined ? G.fertility : 65;
+    var basePregnancyChance = G.age <= 28 ? 0.40
+                            : G.age <= 33 ? 0.28
+                            : G.age <= 38 ? 0.18
+                            : 0.08;
+    // Scale by fertility (0-100 -> 0 to 1 multiplier)
+    basePregnancyChance *= Math.max(0.05, fertility / 100);
+    // Slightly reduced if already has many children
+    var childCount = (G.children || []).length;
+    if (childCount >= 5) basePregnancyChance *= 0.5;
+
+    if (Math.random() < basePregnancyChance) {
+      events.push({ autonomousPregnancy: true });
+    }
+  }
+
+  // ── Childless concern popup (age 40+, no children) ────────
+  if (
+    isNewYear &&
+    G.gender === 'female' &&
+    G.age >= 40 &&
+    (!G.children || G.children.length === 0) &&
+    !G.childlessMomentFired &&
+    Math.random() < 0.6
+  ) {
+    G.childlessMomentFired = true;
+    events.push({ childlessMoment: true });
+  }
+
   // ── NPC introduction (35%) ──
   if (
     G.phase !== 'childhood' &&
@@ -1045,6 +1185,23 @@ function getSuitorEntry(suitorFirst) {
 // ── MARRIAGE ───────────────────────────────────────────────
 
 // Courtship styles — affects how flirt/dance/enquire land
+// ── TRAIT COMPATIBILITY MATRIX ────────────────────────────
+// How player trait + suitor trait combine (1=great, 0=neutral, -1=friction)
+const TRAIT_COMPAT = {
+  witty:     { witty:0.8, charming:0.7, reserved:0.4, sardonic:0.9, kind:0.5, ambitious:0.4, melancholy:0.3, lively:0.7, proud:-0.2, gentle:0.4, haughty:-0.3, earnest:0.5 },
+  charming:  { witty:0.7, charming:0.5, reserved:0.2, sardonic:0.4, kind:0.7, ambitious:0.6, melancholy:0.1, lively:0.8, proud:0.2,  gentle:0.6, haughty:0.0, earnest:0.4 },
+  reserved:  { witty:0.4, charming:0.3, reserved:0.7, sardonic:0.5, kind:0.6, ambitious:0.2, melancholy:0.6, lively:-0.1,proud:0.3,  gentle:0.7, haughty:0.1, earnest:0.6 },
+  kind:      { witty:0.5, charming:0.7, reserved:0.6, sardonic:0.2, kind:0.8, ambitious:0.3, melancholy:0.4, lively:0.6, proud:-0.1, gentle:0.9, haughty:-0.4,earnest:0.8 },
+  proud:     { witty:0.2, charming:0.3, reserved:0.4, sardonic:0.1, kind:0.1, ambitious:0.7, melancholy:0.2, lively:0.2, proud:-0.3, gentle:0.2, haughty:-0.1,earnest:0.3 },
+  earnest:   { witty:0.5, charming:0.4, reserved:0.6, sardonic:0.3, kind:0.8, ambitious:0.5, melancholy:0.5, lively:0.4, proud:0.2,  gentle:0.8, haughty:-0.1,earnest:0.7 },
+  ambitious: { witty:0.4, charming:0.6, reserved:0.2, sardonic:0.3, kind:0.3, ambitious:0.4, melancholy:0.0, lively:0.5, proud:0.5,  gentle:0.2, haughty:0.3, earnest:0.4 },
+  lively:    { witty:0.7, charming:0.8, reserved:-0.1,sardonic:0.4, kind:0.6, ambitious:0.5, melancholy:0.0, lively:0.6, proud:0.1,  gentle:0.5, haughty:0.0, earnest:0.4 },
+  melancholy:{ witty:0.3, charming:0.1, reserved:0.6, sardonic:0.6, kind:0.4, ambitious:0.0, melancholy:0.5, lively:0.0, proud:0.1,  gentle:0.5, haughty:0.0, earnest:0.5 },
+  gentle:    { witty:0.4, charming:0.6, reserved:0.7, sardonic:0.2, kind:0.9, ambitious:0.2, melancholy:0.5, lively:0.5, proud:-0.2, gentle:0.8, haughty:-0.3,earnest:0.8 },
+  haughty:   { witty:0.0, charming:0.2, reserved:0.3, sardonic:0.2, kind:-0.2,ambitious:0.5, melancholy:0.2, lively:0.0, proud:0.0,  gentle:-0.1,haughty:0.1, earnest:0.1 },
+  sardonic:  { witty:0.9, charming:0.4, reserved:0.5, sardonic:0.7, kind:0.2, ambitious:0.3, melancholy:0.6, lively:0.4, proud:0.0,  gentle:0.2, haughty:0.1, earnest:0.3 },
+};
+
 const COURTSHIP_STYLES = [
   { id:'romantic',  label:'Romantic',   flirtBonus:2,  danceBonus:2,  enquireBonus:-1, proposeSpeech:'heartfelt' },
   { id:'practical', label:'Practical',  flirtBonus:-1, danceBonus:0,  enquireBonus:3,  proposeSpeech:'businesslike' },
@@ -1053,6 +1210,107 @@ const COURTSHIP_STYLES = [
   { id:'charming',  label:'Charming',   flirtBonus:3,  danceBonus:2,  enquireBonus:1,  proposeSpeech:'polished' },
   { id:'reserved',  label:'Reserved',   flirtBonus:-2, danceBonus:0,  enquireBonus:2,  proposeSpeech:'formal' },
 ];
+
+
+// ── COMPATIBILITY CALCULATION ──────────────────────────────
+function calculateCompatibility(suitor) {
+  var score = 50; // base — neutral
+
+  // Trait harmony
+  var playerTrait = G.father ? G.father.trait : 'earnest'; // player's own dominant trait
+  // Use a proxy for player trait based on highest stat
+  if      (G.wit    >= 70) playerTrait = 'witty';
+  else if (G.looks  >= 70) playerTrait = 'charming';
+  else if (G.faith  >= 70) playerTrait = 'earnest';
+  else if (G.reputation >= 70) playerTrait = 'proud';
+
+  var suitorTrait = suitor.trait || 'charming';
+  var traitRow    = TRAIT_COMPAT[playerTrait] || TRAIT_COMPAT.earnest;
+  var traitScore  = (traitRow[suitorTrait] !== undefined ? traitRow[suitorTrait] : 0);
+  score += traitScore * 20; // -20 to +18
+
+  // Wit balance — extremes clash, similarity helps
+  var playerWit = G.wit || 50;
+  var suitorWit = suitor.wit || 55;
+  var witDiff   = Math.abs(playerWit - suitorWit);
+  score += witDiff < 10 ? 8 : witDiff < 20 ? 4 : witDiff < 35 ? 0 : -6;
+
+  // Faith proximity
+  var playerFaith = G.faith || 50;
+  var suitorFaith = suitor.faith || 50;
+  var faithDiff   = Math.abs(playerFaith - suitorFaith);
+  score += faithDiff < 15 ? 5 : faithDiff < 30 ? 2 : faithDiff > 50 ? -5 : 0;
+
+  // Shared interests — check player's wardrobe/education for hobby signals
+  var sharedInterests = 0;
+  if (suitorTrait === 'witty'    && (G.wit||0) >= 65)        sharedInterests++;
+  if (suitorTrait === 'earnest'  && (G.faith||0) >= 65)      sharedInterests++;
+  if (suitorTrait === 'gentle'   && (G.looks||0) >= 65)      sharedInterests++;
+  if (suitorTrait === 'lively'   && G.assets && G.assets.some(function(a){return a.type==='horse';})) sharedInterests++;
+  if (suitor.courtshipStyle && suitor.courtshipStyle.id === 'romantic' && (G.reputation||0) >= 55) sharedInterests++;
+  score += sharedInterests * 4;
+
+  // Fortune hunter penalty — some genuine attraction possible but baseline lower
+  if (suitor._fortuneHunter) score -= 20;
+  // High charm of fortune hunter partially offsets this
+  if (suitor._fortuneHunter && suitorTrait === 'charming') score += 8;
+
+  // Courtship style match with player personality
+  if (suitor.courtshipStyle) {
+    var cs = suitor.courtshipStyle.id;
+    if (cs === 'romantic'  && (G.reputation||0) >= 55) score += 6;
+    if (cs === 'practical' && (G.wit||0) >= 60)        score += 4;
+    if (cs === 'arrogant'  && (G.reputation||0) < 50)  score -= 5;
+    if (cs === 'reserved'  && playerTrait === 'reserved') score += 5;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// Compatibility label — never a number, always a feeling
+function compatibilityLabel(score) {
+  if (score >= 80) return 'Remarkably well-matched';
+  if (score >= 68) return 'A promising match';
+  if (score >= 55) return 'Compatible enough';
+  if (score >= 42) return 'Uncertain';
+  if (score >= 30) return 'A difficult combination';
+  return 'Ill-suited';
+}
+
+// Short flavour line for proposal popup
+function compatibilityLine(score, suitorTrait) {
+  if (score >= 80) {
+    var lines = [
+      'The conversation between you has always been unusually easy.',
+      'You disagree on very little that matters and agree on almost everything that does.',
+      'There is a sympathy between your temperaments that you cannot entirely explain.',
+    ];
+    return pick(lines);
+  } else if (score >= 65) {
+    return 'Your temperaments seem, on the whole, well-suited.';
+  } else if (score >= 50) {
+    var lines2 = [
+      'He is not everything you might have wished, but he is not nothing either.',
+      'You have not always understood each other perfectly. Perhaps that improves.',
+      'Compatible in the ways that matter most. Different in the ways that might be interesting.',
+    ];
+    return pick(lines2);
+  } else if (score >= 35) {
+    var lines3 = [
+      'You suspect you would require considerable patience with each other.',
+      'There is no obvious harmony between your characters. That is not insurmountable.',
+      'He is not easy. You are not certain you are either.',
+    ];
+    return pick(lines3);
+  } else {
+    var lines4 = [
+      'You have spent enough time in his company to know this would be an effort.',
+      'Your natures are not well-matched. That does not mean it cannot work. It means it would require work.',
+      'On paper, it is a reasonable match. In practice, you are less certain.',
+    ];
+    return pick(lines4);
+  }
+}
 
 function generateSuitors(count = 3) {
   // Generate fresh suitors — mix of NPC pool and generated
@@ -1092,15 +1350,17 @@ function generateSuitors(count = 3) {
     // Title rank for title system
     const titleRank = wealth > 8000 ? 4 : wealth > 4000 ? 3 : wealth > 2000 ? 1 : 0;
 
-    suitors.push({
-      ...base,
-      wealth,
-      title,
-      fullName: fullName(title, base.first, base.last),
-      rankLabel,
+    var suitorObj = Object.assign({}, base, {
+      wealth:       wealth,
+      title:        title,
+      fullName:     fullName(title, base.first, base.last),
+      rankLabel:    rankLabel,
       courtshipStyle: style,
-      titleRank,
+      titleRank:    titleRank,
     });
+    // Calculate and store compatibility immediately
+    suitorObj.compatibility = calculateCompatibility(suitorObj);
+    suitors.push(suitorObj);
   }
   return suitors;
 }
@@ -1153,12 +1413,37 @@ const CHILD_NAMES = {
 };
 
 function attemptConception() {
-  // Chance decreases with age
-  const threshold = G.age <= 25 ? 5
-                  : G.age <= 30 ? 6
-                  : G.age <= 35 ? 7
-                  : G.age <= 40 ? 8 : 9;
-  return rand(1, 10) >= threshold;
+  var fertility = G.fertility !== undefined ? G.fertility : 65;
+
+  // Below 15 — effectively infertile
+  if (fertility < 15) {
+    if (Math.random() < 0.05) return true; // very rare miracle
+    return false;
+  }
+
+  // Base chance from fertility (0-100 -> 0.10 to 0.85)
+  var base = 0.10 + (fertility / 100) * 0.75;
+
+  // Age modifier
+  var ageMod = G.age <= 25 ? 1.0
+             : G.age <= 30 ? 0.90
+             : G.age <= 35 ? 0.75
+             : G.age <= 40 ? 0.55
+             : 0.25;
+
+  return Math.random() < (base * ageMod);
+}
+
+// Natural fertility age-decline — called each Spring
+function ageFertility() {
+  if (G.fertility === undefined) return;
+  if (G.age < 28) return; // no natural decline before 28
+  var decline = G.age >= 38 ? rand(2,5)
+              : G.age >= 33 ? rand(1,3)
+              : rand(0,2);
+  if (decline > 0) {
+    G.fertility = Math.max(0, G.fertility - decline);
+  }
 }
 
 function birthOutcome() {

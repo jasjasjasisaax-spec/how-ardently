@@ -1,3 +1,43 @@
+
+// ── SETTLEMENT CALCULATION ────────────────────────────────
+// What the father/guardian settles on the player at marriage
+function calculateFatherSettlement() {
+  var fatherWealth = 0;
+  var profession   = 'landed_gentry';
+  var fatherAlive  = G.father && G.father.alive;
+
+  if (G.fatherBg) {
+    fatherWealth = G.fatherBg.fatherWealth || 0;
+    profession   = G.fatherBg.profession  || 'landed_gentry';
+  } else if (G.father) {
+    fatherWealth = G.father.wealth || 0;
+  }
+
+  if (fatherWealth <= 0) return 0;
+
+  // Settlement is typically 5-15% of father's wealth as a one-off payment
+  // Plus any pinMoney continuation as an annual sum (converted to lump)
+  var pct = {
+    landed_gentry:  0.10,
+    clergyman:      0.06,
+    physician:      0.08,
+    lawyer:         0.09,
+    naval_officer:  0.07,
+    army_officer:   0.07,
+    merchant:       0.12,
+    banker:         0.13,
+    antiquary:      0.06,
+  }[profession] || 0.08;
+
+  var base = Math.floor(fatherWealth * pct);
+
+  // Guardian (father dead) settles less
+  if (!fatherAlive) base = Math.floor(base * 0.5);
+
+  // Round to nearest 25 for period flavour
+  return Math.max(0, Math.round(base / 25) * 25);
+}
+
 // ═══════════════════════════════════════════════════════════
 // wedding.js — Multi-step wedding planning flow
 // Called from ui.js after proposal accepted
@@ -9,20 +49,157 @@
 
 function startWeddingPlanning(suitor) {
   // Store suitor reference — planning takes one popup chain
+  // Calculate what father/guardian can settle
+  var settlementAmount = calculateFatherSettlement();
+
   G.weddingPlan = {
     suitor,
-    venue:         null,
-    guestList:     null,
-    outfit:        null,
-    breakfast:     null,
-    honeymoon:     null,
-    totalCost:     0,
-    repEffect:     0,
-    looksEffect:   0,
-    healthEffect:  0,
+    venue:           null,
+    guestList:       null,
+    outfit:          null,
+    breakfast:       null,
+    honeymoon:       null,
+    totalCost:       0,
+    repEffect:       0,
+    looksEffect:     0,
+    healthEffect:    0,
     closenessEffect: 0,
+    settlement:      settlementAmount,  // father's dowry contribution
+    playerTopUp:     0,                 // player's own addition
   };
-  openWeddingStep_Venue();
+  openWeddingStep_Settlement();
+}
+
+
+// ── STEP 0: MARRIAGE SETTLEMENT (DOWRY) ───────────────────
+function openWeddingStep_Settlement() {
+  var plan    = G.weddingPlan;
+  var suitor  = plan.suitor;
+  var amount  = plan.settlement;
+  var fatherAlive = G.father && G.father.alive;
+  var guardianName = fatherAlive
+    ? (G.father.name || 'Your father')
+    : (G.guardian ? G.guardian.name : 'Your guardian');
+
+  // Describe what is being settled
+  var settlementDesc = amount > 0
+    ? '£' + amount.toLocaleString() + ' is settled upon you — '
+      + (amount >= 500 ? 'a handsome sum, spoken of approvingly.'
+       : amount >= 200 ? 'a respectable settlement.'
+       : amount >= 100 ? 'modest, but proper.'
+       : 'not much, but given with goodwill.')
+    : 'There is very little ' + (fatherAlive ? 'your father' : 'your guardian') + ' can settle on you. The estate does not allow for it. He is sorry.';
+
+  var suitorReaction = amount >= 500 ? suitor.first + ' receives the news of the settlement with visible satisfaction.'
+    : amount >= 200 ? suitor.first + ' accepts the terms without comment, which is acceptance.'
+    : amount >= 50  ? suitor.first + ' says the settlement is entirely satisfactory. You believe him mostly.'
+    : suitor.first  + ' says he is not marrying you for money. This is either very romantic or very practical.';
+
+  queuePopup(
+    'Before the wedding can be arranged, the matter of settlements must be discussed.\n\n'
+      + guardianName + ' meets with ' + suitor.first + '\'s people.\n\n'
+      + settlementDesc + '\n\n'
+      + suitorReaction,
+    [
+      {
+        text: 'Accept the settlement as offered',
+        fn() {
+          plan.settlement = amount;
+          openWeddingStep_PlayerContribution(); return null;
+        },
+      },
+      {
+        text: 'Ask ' + (fatherAlive ? 'your father' : 'your guardian') + ' to negotiate for more',
+        fn() {
+          // 50% chance of success, based on suitor wealth and father approval
+          var fatherApproval = G.father ? (G.father.approval || 55) : 50;
+          var suitorWealth   = suitor.wealth || 0;
+          var successChance  = 0.3 + (fatherApproval / 100) * 0.3 + (suitorWealth > 3000 ? 0.15 : 0);
+          if (Math.random() < successChance) {
+            var increase = Math.round(amount * rand(15, 35) / 100 / 25) * 25;
+            plan.settlement = amount + increase;
+            queuePopup(
+              (fatherAlive ? 'Your father' : 'Your guardian') + ' negotiates with quiet determination. The settlement is increased by £' + increase + '.',
+              '+£' + increase,
+              null,
+              function() { openWeddingStep_PlayerContribution(); }
+            );
+          } else {
+            changeStat('reputation', -rand(1,3));
+            queuePopup(
+              'The negotiation is not a success. ' + suitor.first + '\'s family holds firm. The original terms stand, and there is a slight coolness.',
+              'Rep -2',
+              null,
+              function() { openWeddingStep_PlayerContribution(); }
+            );
+          }
+          return null;
+        },
+      },
+      {
+        text: 'Accept whatever is offered — it is not why you are marrying him',
+        fn() {
+          plan.settlement = amount;
+          if (G.spouse || suitor) {
+            plan.closenessEffect += 5; // noted
+          }
+          openWeddingStep_PlayerContribution(); return null;
+        },
+      },
+    ]
+  );
+}
+
+// ── STEP 0b: PLAYER ADDS OWN FUNDS TO SETTLEMENT ──────────
+function openWeddingStep_PlayerContribution() {
+  var plan   = G.weddingPlan;
+  var wealth = G.wealth || 0;
+
+  if (wealth < 25) {
+    // Nothing to add — skip straight to venue
+    openWeddingStep_Venue();
+    return;
+  }
+
+  queuePopup(
+    'You have \u00a3' + wealth.toLocaleString() + ' of your own.\n\nA wife who brings her own property into a marriage retains a degree of independence. Some husbands respect this. Some resent it. Most simply accept it.',
+    null,
+    [
+      {
+        text: 'Add £' + Math.min(wealth, 100) + ' of your own to the settlement',
+        fn() {
+          var add = Math.min(wealth, 100);
+          plan.playerTopUp  = add;
+          plan.settlement  += add;
+          plan.repEffect   += rand(2,4);
+          openWeddingStep_Venue(); return null;
+        },
+      },
+      {
+        text: 'Add £' + Math.min(wealth, 250) + ' — a meaningful contribution',
+        fn() {
+          var add = Math.min(wealth, 250);
+          plan.playerTopUp  = add;
+          plan.settlement  += add;
+          plan.repEffect   += rand(3,6);
+          plan.closenessEffect += 3;
+          openWeddingStep_Venue(); return null;
+        },
+      },
+      {
+        text: 'Keep your own money separate — it is yours',
+        fn() {
+          plan.playerTopUp = 0;
+          queuePopup(
+            'Wise. A woman\'s own income, however modest, is a kind of freedom. You keep it.',
+            null, null,
+            function() { openWeddingStep_Venue(); }
+          );
+          return null;
+        },
+      },
+    ]
+  );
 }
 
 // ── STEP 1: VENUE ──────────────────────────────────────────
@@ -305,6 +482,15 @@ function resolveWedding() {
   } else {
     G.wealth -= cost;
   }
+
+  // Apply settlement — player receives the agreed sum
+  var totalSettlement = (plan.settlement || 0) - (plan.playerTopUp || 0);
+  if (totalSettlement > 0) {
+    G.wealth = (G.wealth || 0) + totalSettlement;
+    addFeedEntry('Your marriage settlement: £' + totalSettlement.toLocaleString() + '.', 'good');
+  }
+  // Store settlement info on spouse for dynasty records
+  G.weddingPlan._settlementPaid = plan.settlement || 0;
 
   // Apply all effects
   acceptProposal(suitor);

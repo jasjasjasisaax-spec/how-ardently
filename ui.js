@@ -134,6 +134,29 @@ function closePopup() {
 // ── ACTION DISPATCH ────────────────────────────────────────
 // Handles the result object from actions.js
 
+// Runs doAction and displays the result — popup + feed entry + stat render
+function dispatchDoAction(key) {
+  var result = typeof doAction === 'function' ? doAction(key) : null;
+  if (!result) { renderStats(); saveGame(); return; }
+  if (result.log) {
+    var entry = typeof result.log === 'string' ? { text: result.log, type: '' } : result.log;
+    addFeedEntry(entry.text, entry.type || '');
+  }
+  if (result.popup) {
+    var p = result.popup;
+    var choices = p.choices ? p.choices.map(function(c) {
+      return { text: c.text, fn() {
+        var r2 = c.fn ? c.fn() : null;
+        if (r2 && r2.text)  queuePopup(r2.text, r2.badge||null);
+        if (r2 && r2.log)   addFeedEntry(typeof r2.log==='string'?r2.log:r2.log.text, '');
+        renderStats(); saveGame(); return null;
+      }};
+    }) : null;
+    queuePopup(p.text, p.badge||null, choices);
+  }
+  renderStats(); saveGame();
+}
+
 function handleAction(key) {
   // Special multi-step actions handled in UI directly
   if (key === 'circle')         { switchView('people'); renderPeopleView(); return; }
@@ -142,6 +165,22 @@ function handleAction(key) {
   if (key === 'hh_accounts')     { openAccountBook();          return; }
   if (key === 'hh_entertaining') { openEntertainingView();     return; }
   if (key === 'hh_nursery')      { openNurseryView();          return; }
+  if (key === 'modiste')          { openModiste();                    return; }
+  if (key === 'needlework')       { dispatchDoAction('needlework');   return; }
+  if (key === 'tea_party')        { openTeaParty();                   return; }
+  if (key === 'cards')            { openCards();                      return; }
+  if (key === 'lawn_games')       { dispatchDoAction('lawn_games');   return; }
+  if (key === 'charity')          { openCharityWork();                return; }
+  if (key === 'riding')           { dispatchDoAction('riding');       return; }
+  if (key === 'physician')        { openPhysician();                  return; }
+  if (key === 'stillroom')        { dispatchDoAction('stillroom');    return; }
+  if (key === 'country_walk')    { dispatchDoAction('country_walk');  return; }
+  if (key === 'visit_tenants')   { openVisitTenants();          return; }
+  if (key === 'hear_grievances') { openVillageComes();          return; }
+  if (key === 'tend_sick')       { dispatchDoAction('tend_sick');     return; }
+  if (key === 'send_baskets')    { openSendBaskets();           return; }
+  if (key === 'village_fete')    { openVillageFete();             return; }
+  if (key === 'visit')           { openVisitNeighbours();        return; }
   if (key === 'hh_none')         { return; }
   if (key === 'assets_view') {
     // Show owned assets then buy options by category
@@ -164,6 +203,7 @@ function handleAction(key) {
   if (key === 'invest_view')     { if(typeof openInvestmentMenu==='function') openInvestmentMenu(); return; }
   if (key === 'debt_view')       { if(typeof openDebtMenu==='function') openDebtMenu(); return; }
   if (key === 'will_view')       { if(typeof openWillView==='function') openWillView(); return; }
+  if (key === 'dynasty')         { openDynastyView();                  return; }
   if (key.startsWith('career_')) { openCareerDetail(key.replace('career_','')); return; }
   if (key === 'load_game')      { if(typeof openSaveSlots==='function') openSaveSlots('load'); return; }
   if (key === 'choose_schooling')  {
@@ -250,63 +290,72 @@ function handleAction(key) {
 // ── STAT HEADER ────────────────────────────────────────────
 
 function renderStats() {
-  // Standing tier uses composite score; repTier is now a wrapper for standingTier
-  const tier  = typeof standingTier === 'function' ? standingTier() : repTier(G.reputation);
-  const score = typeof standingScore === 'function' ? standingScore() : G.reputation;
-  const phase  = G.phase === 'childhood'
+  var tier  = typeof standingTier === 'function' ? standingTier() : repTier(G.reputation);
+  var phase = G.phase === 'childhood'
     ? (G.age === 0 ? 'Newborn'
       : G.age < 2  ? 'Infant · Age ' + G.age
       : G.age < 4  ? 'Toddler · Age ' + G.age
       : 'Childhood · Age ' + G.age)
-    : `Age ${G.age} · ${G.season}`;
+    : 'Age ' + G.age + ' · ' + G.season;
 
+  var nameDisplay = typeof getTitlePrefix==='function' && G.title && G.title.rank > 0
+    ? getTitlePrefix() + ' ' + G.name : G.name;
+  var wealthDisplay = '£' + G.wealth.toLocaleString()
+    + (typeof netAssetIncome==='function' && G.assets && G.assets.length
+        ? ' (£' + netAssetIncome() + '/s)' : '');
 
-  // Education stats section (childhood, female, collapsible)
-  let eduHtml = '';
-  if (G.phase === 'childhood' && G.gender === 'female' && G.eduStats && G.age >= 4) {
-    const e = G.eduStats;
-    const collapsed = e.collapsed;
-    eduHtml = `<div class="edu-hdr" onclick="toggleEduStats()">
-      <span class="edu-hdr-label">▸ Education</span>
-      <span class="edu-hdr-toggle">${collapsed ? '' : ''}</span>
-    </div>`;
-    if (!collapsed) {
-      eduHtml += `<div class="edu-bars">
-        ${bar('Literacy', e.literacy.total, '#7a4f2d')}
-        ${bar('Reason',   e.reason.total,   '#2d5016')}
-        ${bar('Faith',    e.faith.total,    '#4a3080')}
-        ${bar('Decorum',  e.decorum.total,  '#b8860b')}
-      </div>`;
-    }
+  // Top header: name / age / wealth / tier
+  var hdrEl = document.getElementById('stat-hdr');
+  if (hdrEl) {
+    hdrEl.innerHTML =
+      '<div class="sh-top">'
+      + '<span class="sh-name" onclick="devTitleTap()" style="cursor:default">' + nameDisplay + '</span>'
+      + '<span class="sh-meta">' + phase + '</span>'
+      + '<button class="sh-settings-btn" onclick="openSettingsMenu()" title="Settings">⚙</button>'
+      + '</div>'
+      + '<div class="sh-bot">'
+      + '<span class="wv">' + wealthDisplay + '</span>'
+      + '<span class="tb">★ ' + tier + '</span>'
+      + '</div>';
   }
 
-  document.getElementById('stat-hdr').innerHTML = `
-    <div class="sh-top">
-      <span class="sh-name" onclick="devTitleTap()" style="cursor:default">${typeof getTitlePrefix==='function'&&G.title&&G.title.rank>0?getTitlePrefix()+' '+G.name:G.name}</span>
-      <span class="sh-meta">${phase}</span>
-      <button class="sh-settings-btn" onclick="openSettingsMenu()" title="Settings">⚙</button>
-    </div>
-    <div class="bars">
-      ${bar('Health', G.health,     '#8b2020')}
-      ${bar('Looks',  G.looks,      '#7a4f2d')}
-      ${bar('Wit',    G.wit,        '#2d5016')}
-      ${bar('Standing', score, '#b8860b')}
-    </div>
-    <div class="sh-bot">
-      <span class="wv">£${G.wealth.toLocaleString()}${typeof netAssetIncome==='function'&&G.assets&&G.assets.length?' (£'+netAssetIncome()+'/s)':''}</span>
-      <span class="tb">★ ${tier}</span>
-    </div>
-    ${eduHtml}`;
+  // Stat bars below nav tabs
+  var barsEl = document.getElementById('stat-bars');
+  if (barsEl) {
+    var eduHtml = '';
+    if (G.phase === 'childhood' && G.gender === 'female' && G.eduStats && G.age >= 4) {
+      var e = G.eduStats;
+      eduHtml = '<div class="edu-hdr" onclick="toggleEduStats()">'
+        + '<span class="edu-hdr-label">▸ Education</span></div>';
+      if (!e.collapsed) {
+        eduHtml += '<div class="edu-bars">'
+          + bar('Literacy', e.literacy.total, '#7a4f2d')
+          + bar('Reason',   e.reason.total,   '#2d5016')
+          + bar('Faith',    e.faith.total,    '#4a3080')
+          + bar('Decorum',  e.decorum.total,  '#b8860b')
+          + '</div>';
+      }
+    }
+    barsEl.innerHTML = '<div class="bars">'
+      + bar('Health',  G.health,       '#8b2020')
+      + bar('Looks',   G.looks,        '#7a4f2d')
+      + bar('Wit',     G.wit,          '#2d5016')
+      + bar('Rep',     G.reputation,   '#b8860b')
+      + bar('Fashion', G.fashion || 0, '#8b4513')
+      + '</div>' + eduHtml;
+  }
 
   // Age-up button label
-  const nextSeason = G.season === 'Spring' ? 'Autumn' : 'Spring';
+  var nextSeason = G.season === 'Spring' ? 'Autumn' : 'Spring';
   document.getElementById('au-label').textContent =
     G.phase === 'childhood'
       ? (G.age < 4 ? '⏭  GROW UP' : '⏭  GROW UP A SEASON')
       : '⏭  ADVANCE TO ' + nextSeason.toUpperCase();
   document.getElementById('au-sub').textContent =
-    G.phase === 'childhood' ? `age ${G.age}` : `currently ${G.season}`;
+    G.phase === 'childhood' ? 'age ' + G.age : 'currently ' + G.season;
 }
+
+
 
 function bar(label, val, colour) {
   return `<div class="sb">
@@ -536,9 +585,14 @@ function getCatConfig(id) {
           { key:'almacks', icon:'✨', name:"Almack's Assembly",   hint: spring ? 'The ultimate social test'       : 'Out of season', locked: !spring },
           { key:'letters', icon:'💌', name:'Write Letters',       hint: 'Maintain your correspondences' },
         ]},
-        { label: 'Country', items: [
-          { key:'country', icon:'🍂', name:'Country Life',        hint: !spring ? 'Autumn retreat' : 'You are in Town', locked: spring },
-          { key:'visit',   icon:'🏡', name:'Visit Neighbours',    hint: 'Local calls and morning visits' },
+        { label: 'Country Life', items: [
+          { key:'country_walk',    icon:'\u{1F33F}', name:'Walk in the Countryside', hint: !spring ? 'Fine eyes require exercise' : 'You are in Town', locked: spring },
+          { key:'visit_tenants',   icon:'\u{1F3E1}', name:'Visit Tenants',           hint: G.assets && G.assets.some(function(a){return a.type==='estate';}) ? 'Your estate depends on them' : 'Requires an estate', locked: !(G.assets && G.assets.some(function(a){return a.type==='estate';})) },
+          { key:'hear_grievances', icon:'\u{1F4AC}', name:'Hear Grievances',         hint: !spring ? 'Hear local concerns' : 'You are in Town', locked: spring },
+          { key:'tend_sick',       icon:'\u{1F33C}', name:'Tend the Sick',           hint: 'Visit the cottage poor' },
+          { key:'send_baskets',    icon:'\u{1F9FA}', name:'Send Baskets',            hint: G.wealth >= 10 ? 'Provisions to the needy (£5+)' : 'Cannot afford it', locked: G.wealth < 5 },
+          { key:'village_fete',    icon:'\u{1F3AA}', name:'Village Fete',            hint: !spring ? 'Autumn fair — open to all' : 'Held in summer', locked: spring },
+          { key:'visit',           icon:'\u{1F3E0}', name:'Visit Neighbours',        hint: 'Morning calls and local society' },
         ]},
         { label: 'Your Circle', items: [
           { key:'social',  icon:'🤝', name:'Pay a Social Call',   hint: 'Visit your acquaintances' },
@@ -555,18 +609,38 @@ function getCatConfig(id) {
       sub:   'Your mind, your health, your accomplishments',
       sections: [
         { label: 'Mind', items: [
-          { key:'read',    icon:'\u{1F4DA}', name:'Read Books',       hint:'Expand your mind considerably' },
-          { key:'letters', icon:'\u270C',    name:'Write Letters',    hint:'Wit exercised by correspondence' },
+          { key:'read',       icon:'\u{1F4DA}', name:'Read Books',       hint:'Expand your mind considerably' },
+          { key:'letters',    icon:'\u270C',    name:'Write Letters',    hint:'Wit exercised by correspondence' },
         ]},
         { label: 'Accomplishments', items: [
           G.gender === 'female'
-            ? { key:'piano',   icon:'\u{1F3B9}', name:'Pianoforte', hint:'Practise your instrument' }
-            : { key:'fencing', icon:'\u{1F93A}', name:'Fencing',    hint:'With the fencing master' },
-          { key:'sketch',  icon:'\u{1F3A8}', name:'Sketching',        hint:'Watercolours and composition' },
+            ? { key:'piano',      icon:'\u{1F3B9}', name:'Pianoforte',   hint:'Practise your instrument' }
+            : { key:'fencing',    icon:'\u{1F93A}', name:'Fencing',      hint:'With the fencing master' },
+          { key:'sketch',     icon:'\u{1F3A8}', name:'Sketching',        hint:'Watercolours and composition' },
+          { key:'needlework', icon:'\u{1F9F5}', name:'Needlework',       hint:'Quiet industry and fine stitches' },
         ]},
-        { label: 'Virtue', items: [
-          { key:'parish',  icon:'\u{1F64F}', name:'Visit the Parish', hint:'Be charitable and be seen to be' },
+        { label: 'Social', items: [
+          { key:'tea_party',  icon:'\u{1F375}', name:'Tea Party',
+            hint: spring ? 'Morning calls and afternoon society' : 'A domestic pleasure any season' },
+          { key:'cards',      icon:'\u{1F0CF}', name:'Cards',            hint:'Whist, loo, and the occasional wager' },
+          { key:'lawn_games', icon:'\u{1F3CF}', name:'Lawn Games',       hint:'Pall-mall, archery, fresh air' },
         ]},
+        { label: 'Virtue & Duty', items: [
+          { key:'parish',     icon:'\u{1F64F}', name:'Visit the Parish', hint:'Be charitable and be seen to be' },
+          { key:'charity',    icon:'\u{1F90D}', name:'Charity Work',     hint:'Good works, quietly done' },
+        ]},
+        { label: 'Health & Home', items: [
+          { key:'riding',     icon:'\u{1F40E}', name:'Horse Riding',
+            hint: G.assets && G.assets.some(function(a){return a.type==='horse';}) ? 'Ride out' : 'Requires a horse',
+            locked: !(G.assets && G.assets.some(function(a){return a.type==='horse';})) },
+          { key:'physician',  icon:'\u{1F48A}', name:'Visit the Physician',
+            hint: G.wealth >= 5 ? 'For what ails you (£5+)' : 'Cannot afford it at present', locked: G.wealth < 5 },
+          { key:'stillroom',  icon:'\u{1F9EA}', name:'Stillroom & Soap', hint:'Domestic science and useful industry' },
+        ]},
+        ...(G.phase !== 'childhood' && G.gender === 'female' ? [{ label: 'Fashion', items: [
+          { key:'modiste',    icon:'\u{1F397}', name:'Visit the Modiste',
+            hint: spring ? 'Gowns, gossip, and fashion plates' : 'Visit when in Town', locked: !spring },
+        ]}] : []),
       ],
     };
 
@@ -611,6 +685,7 @@ function getCatConfig(id) {
           { key:'invest_view', icon:'\u{1F4B0}', name:'Investments', hint: G.investments && G.investments.length ? G.investments.length + ' active' : 'None yet' },
           { key:'debt_view',   icon:'\u{1F4DC}', name:'Debts',       hint: G.debts && G.debts.length ? G.debts.length + ' outstanding' : 'No debts', locked: !G.debts || !G.debts.length },
           { key:'will_view',   icon:'\u{1F4CB}', name: G.will && G.will.written ? 'Review Will' : 'Write Your Will', hint: G.will && G.will.written ? 'Will written' : 'No will yet' },
+          { key:'dynasty',     icon:'\u{1F3F0}', name:'Dynasty & Family', hint: 'Marriages, heirs, and legacy' },
         ]},
         ...(G.gender === 'female' && !G.isMarried && typeof getAvailableCareers === 'function' ? (function() { try { var c = getAvailableCareers(); return c && c.length ? [{ label: 'Career', items: c.slice(0,4).map(function(x){ return { key:'career_'+x.id, icon:'\u{1F4BC}', name:x.name, hint:x.desc }; }) }] : []; } catch(e) { return []; } })() : []),
       ],
@@ -788,8 +863,17 @@ function openMarriageMart() {
 
 function beginCourtship(suitor) {
   addFeedEntry('You turn your attention to ' + suitor.fullName + '.', 'event');
+  // Calculate compatibility if not already done
+  if (suitor.compatibility === undefined && typeof calculateCompatibility === 'function') {
+    suitor.compatibility = calculateCompatibility(suitor);
+  }
+  var compatScore = suitor.compatibility || 50;
+  var compatDesc  = typeof compatibilityLabel === 'function' ? compatibilityLabel(compatScore) : '';
+
   queuePopup(
-    `${suitor.fullName}. ${suitor.rankLabel}, £${suitor.wealth.toLocaleString()} per annum. ${suitor.desc.charAt(0).toUpperCase() + suitor.desc.slice(1)}.`,
+    suitor.fullName + '. ' + suitor.rankLabel + ', £' + suitor.wealth.toLocaleString() + ' per annum. '
+      + suitor.desc.charAt(0).toUpperCase() + suitor.desc.slice(1) + '.'
+      + (compatDesc ? '\nCompatibility: ' + compatDesc + '.' : ''),
     null,
     [
       { text: 'Flirt delicately',          fn() { courtAction(suitor, 'flirt');   return null; } },
@@ -808,10 +892,12 @@ function courtAction(suitor, action) {
       const flirtThreshold = Math.max(3, 6 - (style.flirtBonus||0));
       if (rand(1,10) >= flirtThreshold) {
         changeStat('reputation', rand(3,7));
-        queuePopup(
-          `You deploy your most winning smile. ${suitor.first} responds with gratifying warmth.`,
-          'Reputation +5', null, null, false
-        );
+        var flirtLine = compatScore >= 65
+          ? 'You deploy your most winning smile. ' + suitor.first + ' responds with gratifying warmth. There is something here.'
+          : compatScore >= 45
+          ? 'You deploy your most winning smile. ' + suitor.first + ' responds with polite warmth.'
+          : 'You deploy your most winning smile. ' + suitor.first + ' responds correctly but the warmth is somewhat studied.';
+        queuePopup(flirtLine, 'Reputation +5', null, null, false);
         // Give option to continue
         setTimeout(() => beginCourtship(suitor), 600);
       } else {
@@ -1072,6 +1158,11 @@ function doAgeUp() {
     }, 300);
     saveGame();
     return;
+  }
+
+  // Fortune hunter follow-up
+  if (G._fortuneHunterFollowUp && typeof checkFortuneHunterFollowUp === 'function') {
+    setTimeout(function() { checkFortuneHunterFollowUp(); }, 900);
   }
 
   // Season banner in feed
@@ -1458,6 +1549,49 @@ function doAgeUp() {
     if (ev.comingOfAge) {
       var coa = ev.comingOfAge;
       setTimeout(function() { fireComingOfAgeEvent(coa); }, 600);
+    }
+
+    // Child marriage age — arrange a match
+    if (ev.childMilestone && ev.childMilestone.event === 'marriage_age') {
+      var cma = ev.childMilestone;
+      setTimeout(function(){ openArrangeMarriage(cma.child); }, 600);
+    }
+
+    // Child married independently
+    if (ev.childMilestone && ev.childMilestone.event === 'married_independently') {
+      var cmi = ev.childMilestone;
+      setTimeout(function(){
+        var spouseNames = ['a Mr Holt of Derbyshire', 'a Miss Cartwright of Surrey', 'a Captain Vane', 'a Miss Drummond', 'a Mr Pendleton'];
+        var sp = pick(spouseNames);
+        cmi.child.isMarried = true;
+        cmi.child.spouseName = sp;
+        addFeedEntry(cmi.child.name + ' marries ' + sp + '.', 'event');
+        queuePopup(
+          cmi.child.name + ' has made their own arrangements. They are to marry ' + sp + '. You were not, precisely, consulted.',
+          'Family news'
+        );
+        saveGame();
+      }, 600);
+    }
+
+    // Childless moment
+    if (ev.childlessMoment) {
+      setTimeout(function(){ fireChildlessMoment(); }, 800);
+    }
+
+    // Fortune hunter
+    if (ev.fortuneHunter) {
+      setTimeout(function() { fireFortunehunter(ev.fortuneHunter); }, 700);
+    }
+
+    // Autonomous proposal
+    if (ev.autonomousProposal) {
+      setTimeout(function() { fireAutonomousProposal(ev.autonomousProposal); }, 700);
+    }
+
+    // Autonomous pregnancy
+    if (ev.autonomousPregnancy) {
+      setTimeout(function() { fireAutonomousPregnancy(); }, 500);
     }
 
     // NPC introduction
@@ -2620,7 +2754,9 @@ function openDevPanel() {
     + '\nWealth: £' + (G.wealth||0).toLocaleString()
     + (G.pinMoney ? '  Pin money: £' + G.pinMoney + '/season' : '')
     + (G.fatherBg ? '\nFather: ' + (G.fatherBg.profLabel||'?') + ' · £' + (G.fatherBg.fatherWealth||0) : '')
-    + (G.household ? '\nHousehold tier: ' + G.household.tier + '  Balance: £' + (G.household.accounts.balance||0) : '');
+    + (G.household ? '\nHousehold tier: ' + G.household.tier + '  Balance: £' + (G.household.accounts.balance||0) : '')
+    + '\nFertility: ' + (G.fertility !== undefined ? (G.fertility >= 70 ? 'High (' : G.fertility >= 40 ? 'Normal (' : G.fertility >= 20 ? 'Low (' : 'Very low (') + G.fertility + ')' : 'unknown') + (G.age >= 28 ? ' · declining' : '')
+    + (G.expectedSettlement ? '\nExpected settlement: £' + G.expectedSettlement.toLocaleString() : '');
 
   queuePopup(
     'DEV PANEL\n' + info,
@@ -2655,6 +2791,7 @@ function devSetStats() {
     { text: 'Wealth £' + (G.wealth||0),    fn() { devSetStat('wealth');     return null; } },
     { text: 'Income £' + (G.income||0),    fn() { devSetStat('income');     return null; } },
     { text: 'Pin Money £' + (G.pinMoney||0),fn() { devSetStat('pinMoney'); return null; } },
+    { text: 'Fertility ' + (G.fertility!==undefined?G.fertility:'?'), fn() { devSetStat('fertility'); return null; } },
     { text: 'Age (' + G.age + ')',              fn() { devSetStat('age');        return null; } },
     { text: '← Dev Panel', fn() { openDevPanel(); return null; } },
   ]);
@@ -4366,6 +4503,2354 @@ function devAssetTools() {
         G.assets = []; saveGame(); queuePopup('All assets cleared.'); return null;
       }},
       { text: '\u2190 Dev Panel', fn() { openDevPanel(); return null; } },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// COUNTRY LIFE — popup functions
+// ═══════════════════════════════════════════════════════════
+
+function openVisitTenants() {
+  var estate = G.assets && G.assets.find(function(a){ return a.type === 'estate'; });
+  if (!estate) { queuePopup('You must own an estate before you can visit tenants.'); return; }
+
+  var hasHousekeeper = G.household && G.household.staff && G.household.staff.housekeeper && G.household.staff.housekeeper.hired;
+
+  queuePopup(
+    'Visiting Tenants\n' + estate.name + '\n\nYour tenants depend on the estate as much as the estate depends on them.',
+    null,
+    [
+      {
+        text: 'Make a full round of visits',
+        fn() {
+          // Good estate relations — income bonus, reputation, faith
+          var rep = rand(3, 7); changeStat('reputation', rep);
+          var faith = rand(2, 5); changeStat('faith', faith);
+          if (estate.baseIncome) estate.baseIncome = Math.min(estate.baseIncome + 10, estate.baseIncome * 1.1);
+          addFeedEntry('You visit all your tenants.', 'good');
+          var msgs = [
+            'A full day of visits. You hear about the Millers\' roof, the dispute over the south field, and who has had a baby and who has lost one. It is exhausting and necessary.',
+            'You go round all the cottages. Some receive you with tea and warmth; others are more reserved. You leave knowing your estate rather better than when you arrived.',
+            'The tenants receive you well. You listen more than you speak, which seems to be the right instinct. Several small problems come to light before they became large ones.',
+          ];
+          queuePopup(pick(msgs), 'Rep +' + rep + '\u00b7 Faith +' + faith);
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Inspect the farms and speak to the labourers',
+        fn() {
+          var witBonus = rand(2, 5); changeStat('wit', witBonus);
+          changeStat('reputation', rand(1, 3));
+          // If there's a home farm improvement, it generates a little more
+          if (estate.improvements_done && estate.improvements_done.includes('home_farm')) {
+            estate.baseIncome = (estate.baseIncome||0) + rand(5, 15);
+            addFeedEntry('You inspect the home farm. The crops look well.', 'good');
+            queuePopup('The home farm is in good order. The bailiff explains the rotation. You understand most of it and ask sensible questions about the rest.', 'Wit +' + witBonus + ' \u00b7 Farm income increased');
+          } else {
+            addFeedEntry('You inspect the estate farms.', 'good');
+            queuePopup('You walk the fields with the bailiff. The land is working but there is room for improvement. You find yourself thinking about home farms.', 'Wit +' + witBonus);
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Send the housekeeper in your stead',
+        fn() {
+          if (!hasHousekeeper) {
+            queuePopup('You have no housekeeper to send. You will need to go yourself, or the tenants will notice the neglect.');
+            return null;
+          }
+          changeStat('reputation', rand(1, 2));
+          addFeedEntry(G.household.staff.housekeeper.name + ' visits the tenants on your behalf.', 'event');
+          queuePopup(G.household.staff.housekeeper.name + ' makes the round efficiently. The visits are noted and appreciated, though it is not quite the same as going yourself.');
+          saveGame(); return null;
+        },
+      },
+      { text: '\u2190 Back', fn() { switchView('society'); renderCatView('society'); return null; } },
+    ]
+  );
+}
+
+function openHearGrievances() {
+  queuePopup(
+    'Hear Grievances\n\nPeople bring their troubles to the house. You can listen, judge, or refer on.',
+    null,
+    [
+      {
+        text: 'Hold an informal hearing',
+        fn() {
+          // Generate a random local dispute
+          var disputes = [
+            { text: 'A dispute between two farming families about a shared water source. Both are convinced they are right. One of them is.', type: 'practical' },
+            { text: 'A widow asks for a reduction in her rent. Her husband died in the spring. The farm is struggling.', type: 'compassion' },
+            { text: 'A young man from the village was dismissed from a nearby house and wants a character reference. His former employer says he was dishonest. He says otherwise.', type: 'moral' },
+            { text: 'Two neighbours have been in dispute about a hedge for eleven years. They want you to settle it. You suspect nobody can.', type: 'impossible' },
+            { text: 'A family asks for help with their roof before winter. They cannot afford the repair.', type: 'practical' },
+          ];
+          var d = pick(disputes);
+          var outcome = d.type === 'compassion' || d.type === 'practical' ? rand(2,5) : rand(1,3);
+          queuePopup(
+            d.text,
+            null,
+            [
+              { text: 'Decide in their favour (costs goodwill elsewhere)', fn() {
+                changeStat('faith', rand(2,5));
+                changeStat('reputation', outcome);
+                if (d.type === 'compassion') {
+                  G.wealth -= Math.min(G.wealth, rand(5,15));
+                }
+                addFeedEntry('You hear a grievance and decide generously.', 'good');
+                queuePopup('Your decision is received with gratitude. The word spreads that the house is a fair one.', 'Faith +3  Rep +' + outcome);
+                renderStats(); saveGame(); return null;
+              }},
+              { text: 'Refer to the local magistrate', fn() {
+                changeStat('wit', rand(1,3));
+                addFeedEntry('You refer a case to the magistrate.', 'event');
+                queuePopup('You listen carefully and refer the matter to the appropriate authority. Not the most satisfying resolution, but a sensible one.');
+                saveGame(); return null;
+              }},
+              { text: 'Listen, then find a compromise', fn() {
+                changeStat('reputation', rand(3,6));
+                changeStat('wit', rand(2,4));
+                addFeedEntry('You broker a local compromise.', 'good');
+                queuePopup('Neither party gets everything they wanted, which probably means it is roughly fair. They accept it. So do you.', 'Rep +4  Wit +2');
+                renderStats(); saveGame(); return null;
+              }},
+            ]
+          );
+          return null;
+        },
+      },
+      {
+        text: 'Leave your door open for callers this afternoon',
+        fn() {
+          changeStat('faith', rand(2,4));
+          changeStat('reputation', rand(1,3));
+          addFeedEntry('You receive callers from the village.', 'good');
+          var msgs = [
+            'Several people come. Most want to be heard more than helped. You listen well.',
+            'The afternoon is busy. A dozen small matters, two genuine crises, and one very long story about a goat.',
+            'You hear more than you expected to. The village is more complicated than it appears from the drawing room.',
+          ];
+          queuePopup(pick(msgs), 'Faith +3');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '\u2190 Back', fn() { switchView('society'); renderCatView('society'); return null; } },
+    ]
+  );
+}
+
+function openSendBaskets() {
+  if (G.wealth < 5) { queuePopup('You cannot afford to send provisions at present.'); return; }
+
+  var options = [
+    { text: 'Modest provisions (\u00a35) \u2014 bread, candles, coal', cost: 5,  faith: rand(3,6),  rep: rand(1,2) },
+    { text: 'A generous hamper (\u00a315) \u2014 preserves, cloth, medicine', cost: 15, faith: rand(5,9),  rep: rand(2,4) },
+    { text: 'Full winter provisions (\u00a330) \u2014 the whole village', cost: 30, faith: rand(8,14), rep: rand(4,7) },
+  ];
+
+  queuePopup(
+    'Send Baskets\n\nProvisions to the village poor. A duty, a kindness, and noticed by all.',
+    null,
+    options
+      .filter(function(o){ return G.wealth >= o.cost; })
+      .map(function(o) {
+        return {
+          text: o.text,
+          fn() {
+            G.wealth -= o.cost;
+            changeStat('faith', o.faith);
+            changeStat('reputation', o.rep);
+            var msgs = [
+              'The baskets are received with quiet gratitude. You do not wait to be thanked.',
+              'You send the baskets and think no more of it. The village thinks rather more of you.',
+              'Several families receive provisions. The vicar mentions it in his sermon. You were not expecting that.',
+              'The work is done before anyone else is awake. You prefer it that way.',
+            ];
+            addFeedEntry('You send provisions to the village.', 'good');
+            queuePopup(pick(msgs), 'Faith +' + o.faith + '  Rep +' + o.rep + '  -\u00a3' + o.cost);
+            renderStats(); saveGame(); return null;
+          },
+        };
+      })
+      .concat([{ text: '\u2190 Back', fn() { switchView('society'); renderCatView('society'); return null; } }])
+  );
+}
+
+function openVisitNeighbours() {
+  // Richer version of visit — targets known NPCs or generates a local call
+  var localNPCs = (G.npcs||[]).filter(function(n) {
+    return n.introduced && !n.isRival && n.metHow !== 'ball' && n.metHow !== 'mart';
+  });
+  var choices = [];
+
+  if (localNPCs.length) {
+    localNPCs.slice(0,5).forEach(function(npc) {
+      choices.push({
+        text: npc.fullName + ' \u2014 ' + (npc.closeness >= 60 ? 'Good friend' : npc.closeness >= 35 ? 'Neighbour' : 'Acquaintance'),
+        fn() {
+          var g = rand(5, 12); changeCloseness(npc, g);
+          changeStat('reputation', rand(1, 3));
+          var msgs = [
+            'A pleasant call on ' + npc.nick + '. You stay two hours. The conversation is good and the cake is better.',
+            npc.nick + ' is full of news. You leave better informed about everything in a five-mile radius.',
+            'You and ' + npc.nick + ' walk in the garden. She tells you something that changes how you think about something else entirely.',
+            npc.nick + ' receives you in the library this time. A new intimacy. You are pleased.',
+          ];
+          addFeedEntry('You call on ' + npc.nick + '.', 'good');
+          queuePopup(pick(msgs), 'Closeness +' + g);
+          renderStats(); saveGame(); return null;
+        },
+      });
+    });
+  }
+
+  // General round of calls
+  choices.push({
+    text: 'Make a general round of morning calls',
+    fn() {
+      var rep = rand(2, 5); changeStat('reputation', rep);
+      var msgs = [
+        'A pleasant round of calls. Three houses, four cups of tea, more information than you strictly needed.',
+        'You call on everyone within half a mile. The district is well and wishes to be heard on several points.',
+        'Morning calls. The ritual is ancient and serves its purpose. You are seen, you are sociable, and you come home knowing everything.',
+      ];
+      addFeedEntry('You make a round of morning calls.', 'good');
+      queuePopup(pick(msgs), 'Reputation +' + rep);
+      renderStats(); saveGame(); return null;
+    },
+  });
+
+  choices.push({ text: '\u2190 Back', fn() { switchView('society'); renderCatView('society'); return null; } });
+
+  queuePopup(
+    'Visit Neighbours\nWho shall you call upon?',
+    null,
+    choices
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// VILLAGE FETE — multi-stage experience
+// ═══════════════════════════════════════════════════════════
+
+function openVillageFete() {
+  addFeedEntry('You attend the village fete.', 'event');
+
+  // Stage 1: Vicar approaches for a contribution
+  var hasWealth = G.wealth >= 10;
+  queuePopup(
+    'The Village Fete\n\nThe green is full. There are stalls, a fiddle player, and the smell of pies. The vicar spots you immediately and makes his way over with purpose.',
+    null,
+    [
+      {
+        text: 'Give generously (\u00a310)',
+        fn() {
+          if (!hasWealth) { queuePopup('You cannot afford it. The vicar accepts your apologies graciously.'); openFeteStalls(); return null; }
+          G.wealth -= 10;
+          changeStat('faith', rand(3,6));
+          changeStat('reputation', rand(4,7));
+          addFeedEntry('You contribute to the fete fund.', 'good');
+          queuePopup(
+            'The vicar is visibly delighted. He announces your contribution. Several people look impressed. Your mother would be pleased.',
+            'Faith +4  Rep +5',
+            null,
+            function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Give a modest amount (\u00a32)',
+        fn() {
+          G.wealth -= Math.min(G.wealth, 2);
+          changeStat('faith', rand(1,3));
+          changeStat('reputation', rand(1,3));
+          queuePopup(
+            'The vicar thanks you warmly. It is not a large sum, but it is given cheerfully.',
+            'Faith +2  Rep +2',
+            null,
+            function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Decline politely',
+        fn() {
+          changeStat('reputation', -rand(1,3));
+          queuePopup(
+            'The vicar nods with the particular expression of a man who has been declined before and bears no grudge about it. Several people nearby witnessed it.',
+            'Rep -2',
+            null,
+            function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Offer to organise a stall yourself',
+        fn() {
+          changeStat('reputation', rand(5,10));
+          changeStat('health', -rand(2,4));
+          queuePopup(
+            'Magnificent. You spend the next three hours behind a jam stall. You sell everything. You are exhausted. You have never been more popular.',
+            'Rep +8  Health -3',
+            null,
+            function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+    ]
+  );
+}
+
+function openFeteStalls() {
+  // Stage 2: Choose what to do at the fete
+  var stallsVisited = G._feteStalls || 0;
+  G._feteStalls = (stallsVisited + 1);
+
+  if (stallsVisited >= 3) {
+    // Enough stalls — wrap up
+    G._feteStalls = 0;
+    changeStat('health', rand(3,6));
+    queuePopup(
+      'You have made a thorough circuit of the fete. Your feet ache pleasantly and you are very full of pie. A fine afternoon.',
+      'Health +4'
+    );
+    renderStats(); saveGame(); return;
+  }
+
+  var choices = [
+    {
+      text: 'Browse the produce stalls',
+      fn() {
+        var msgs = [
+          'You spend twenty minutes debating the merits of two almost identical jams. You buy both.',
+          'The vegetable competition is fiercely contested. You congratulate the winner on her parsnips with genuine sincerity.',
+          'You try the honey cake. It is extraordinary. You ask for the recipe. The baker smiles inscrutably and does not give it.',
+          'A small child is selling posies. You buy three.',
+        ];
+        changeStat('health', rand(2,4));
+        addFeedEntry('You browse the produce stalls.', 'good');
+        queuePopup(pick(msgs), 'Health +3', null, function() { openFeteStalls(); });
+        renderStats(); saveGame(); return null;
+      },
+    },
+    {
+      text: 'Watch the games and competitions',
+      fn() {
+        var roll = rand(1,10);
+        if (roll >= 7) {
+          changeStat('wit', rand(2,4));
+          changeStat('reputation', rand(1,3));
+          queuePopup(
+            'You are persuaded to enter the skittles competition. Against all expectation, you win. The village is delighted. You are astonished.',
+            'Wit +3  Rep +2', null, function() { openFeteStalls(); }
+          );
+        } else {
+          changeStat('health', rand(2,4));
+          queuePopup(
+            pick([
+              'You watch the races with great enthusiasm. The children are very fast and entirely unpredictable.',
+              'A tug of war ends badly for one side. Nobody is injured but several are muddy. You applaud everyone equally.',
+              'The egg-and-spoon race is more dramatic than you expected. You find yourself genuinely invested in the outcome.',
+            ]),
+            'Health +3', null, function() { openFeteStalls(); }
+          );
+        }
+        renderStats(); saveGame(); return null;
+      },
+    },
+    {
+      text: 'Speak with the village women',
+      fn() {
+        changeStat('reputation', rand(3,6));
+        changeStat('faith', rand(1,3));
+        var msgs = [
+          'You make a point of speaking to women you do not usually see. Several have opinions on matters you had not considered. You leave knowing considerably more than when you arrived.',
+          'A group of older women receive you with a warmth that surprises you. They remember your grandmother. You did not know you had this history here.',
+          'You talk for an hour with three women from the far end of the parish. They are forthcoming in a way they would not be at a formal call. You are glad you came.',
+        ];
+        addFeedEntry('You speak with the village women at the fete.', 'good');
+        queuePopup(pick(msgs), 'Rep +4', null, function() { openFeteStalls(); });
+        renderStats(); saveGame(); return null;
+      },
+    },
+    {
+      text: 'Investigate a commotion near the beer tent',
+      fn() { openFeteDrunk(); return null; },
+    },
+    {
+      text: 'Leave while the afternoon is still fine',
+      fn() {
+        G._feteStalls = 0;
+        changeStat('health', rand(2,4));
+        queuePopup('You leave at the right moment — before the fiddle player attempts a third encore and before the beer tent becomes a problem.');
+        renderStats(); saveGame(); return null;
+      },
+    },
+  ];
+
+  queuePopup(
+    'The Fete\n' + (stallsVisited === 0 ? 'Where shall you go first?' : stallsVisited === 1 ? 'What next?' : 'One more turn?'),
+    null, choices
+  );
+}
+
+function openFeteDrunk() {
+  // The village drunk — chaos option
+  var drunkNames = ['Old Roper', 'William Vetch', 'Tom Cleary', 'Jack Potts'];
+  var drunk = pick(drunkNames);
+  queuePopup(
+    drunk + ' has had considerably more ale than is wise and is now holding forth at volume on the subject of enclosures, his landlord, and the price of barley. A crowd has gathered. He spots you.',
+    null,
+    [
+      {
+        text: 'Speak to him calmly and redirect him',
+        fn() {
+          var roll = rand(1,10);
+          if (roll >= 5) {
+            changeStat('reputation', rand(3,6));
+            changeStat('faith', rand(2,4));
+            addFeedEntry('You defuse a scene at the fete.', 'good');
+            queuePopup(
+              'You speak to ' + drunk + ' quietly and firmly. He is surprised into civility. The crowd disperses with approval. The vicar mouths "thank you" across the green.',
+              'Rep +4', null, function() { openFeteStalls(); }
+            );
+          } else {
+            changeStat('reputation', -rand(2,4));
+            queuePopup(
+              drunk + ' is not in a mood to be redirected. He makes several remarks. You maintain your composure admirably but the scene is witnessed.',
+              'Rep -3', null, function() { openFeteStalls(); }
+            );
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Send for the constable and walk away',
+        fn() {
+          changeStat('reputation', rand(1,3));
+          addFeedEntry('You send for the constable at the fete.', 'event');
+          queuePopup(
+            'You catch the eye of the parish constable and incline your head toward ' + drunk + '. The matter is handled. You are seen to have handled it correctly.',
+            'Rep +2', null, function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Stay and listen — he may have a point',
+        fn() {
+          changeStat('reputation', -rand(3,7));
+          changeStat('wit', rand(3,6));
+          G.scandals = (G.scandals||0) + 1;
+          addFeedEntry('You stay to listen to the village drunk. This is noted.', 'bad');
+          queuePopup(
+            drunk + ' is, it turns out, not entirely wrong about enclosures. You find yourself engaged in a surprisingly cogent conversation about land rights, tenancy, and the price of grain. Everyone is watching. Your reputation suffers. Your education improves.',
+            'Wit +4  Rep -5  Scandal', null, function() { openFeteStalls(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Pretend you did not see him and move away quickly',
+        fn() {
+          changeStat('health', rand(2,4));
+          queuePopup(
+            'You have not seen ' + drunk + '. You have not heard ' + drunk + '. You are very interested in these preserves over here.',
+            null, null, function() { openFeteStalls(); }
+          );
+          saveGame(); return null;
+        },
+      },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// THE VILLAGE COMES TO YOU — replacing "hear grievances"
+// Framed as a lady of the manor, not a magistrate
+// ═══════════════════════════════════════════════════════════
+
+// Pool of village issues — all framed as coming to a woman for help/intercession
+var VILLAGE_ISSUES = [
+  {
+    title: 'A land dispute',
+    setup: 'Farmer Briggs and Farmer Noll have been in dispute over the boundary of the south field for three years. They have come to you — not for a ruling, but hoping you might speak to the steward, or at least make each of them feel heard.',
+    choices: [
+      {
+        text: 'Arrange a meeting with both and your steward',
+        outcome() {
+          changeStat('reputation', rand(4,8));
+          changeStat('wit', rand(2,4));
+          return { badge: 'Rep +6', text: 'You arrange a proper meeting. The steward draws a line. Both men grumble but accept it. The dispute is, if not resolved, at least contained. They tip their hats to you on the way out.' };
+        },
+      },
+      {
+        text: 'Suggest they share the disputed strip in alternate years',
+        outcome() {
+          var roll = rand(1,10);
+          if (roll >= 5) {
+            changeStat('reputation', rand(3,6));
+            return { badge: 'Rep +4', text: 'Briggs thinks it over. Noll is less certain. After a week, word reaches you that they have agreed to try it for a season. A small miracle.' };
+          } else {
+            changeStat('reputation', -rand(2,4));
+            return { badge: 'Rep -3', text: 'The suggestion pleases neither man. Briggs says it is not the point. Noll says the alternate-year arrangement would favour Briggs. They leave still arguing. You did your best.' };
+          }
+        },
+      },
+      {
+        text: 'Suggest their children marry and settle it that way',
+        outcome() {
+          changeStat('reputation', -rand(5,10));
+          changeStat('wit', rand(2,4));
+          G.scandals = (G.scandals||0) + 1;
+          return { badge: 'Rep -8  Scandal', text: 'Briggs stares at you. Noll stares at you. Both their children are under ten. You realise immediately that this was not your best idea. The story circulates.' };
+        },
+      },
+    ],
+  },
+  {
+    title: 'A character reference request',
+    setup: 'Young Martha Cooper has been let go from a house in the next parish under a cloud. Her mother has come to you. Martha swears she did nothing wrong. The letter from the other house implies otherwise.',
+    choices: [
+      {
+        text: 'Write Martha a reference on her character',
+        outcome() {
+          var roll = rand(1,10);
+          if (roll >= 6) {
+            changeStat('reputation', rand(2,5));
+            changeStat('faith', rand(2,4));
+            return { badge: 'Rep +3  Faith +3', text: 'You write the reference. Martha finds a new position within the month. She sends a short note of thanks. You were right to believe her.' };
+          } else {
+            changeStat('reputation', -rand(2,5));
+            return { badge: 'Rep -3', text: 'You write the reference. Three weeks later, word reaches you that Martha was let go from the new position too. The other letter was, it appears, not entirely wrong.' };
+          }
+        },
+      },
+      {
+        text: 'Speak to the house that dismissed her',
+        outcome() {
+          changeStat('wit', rand(2,5));
+          changeStat('reputation', rand(1,3));
+          return { badge: 'Wit +3  Rep +2', text: 'You write a careful enquiry. The reply is guarded but informative. The truth, as usual, sits somewhere between the two accounts. You form your own view.' };
+        },
+      },
+      {
+        text: 'Decline — it is not your affair',
+        outcome() {
+          changeStat('reputation', -rand(1,3));
+          changeStat('faith', -rand(1,2));
+          return { badge: 'Rep -2  Faith -1', text: 'Martha\'s mother accepts your refusal with quiet dignity. As she leaves you feel the particular unease of having done the technically correct thing.' };
+        },
+      },
+    ],
+  },
+  {
+    title: 'A widow and her rent',
+    setup: 'Mrs Yate\'s husband died in the spring. She has come to ask whether anything can be done about her rent. She is not begging — she is asking. Her dignity is considerable. The rent is yours to influence, if not entirely to decide.',
+    choices: [
+      {
+        text: 'Arrange a reduction for six months',
+        outcome() {
+          G.wealth = Math.max(0, (G.wealth||0) - rand(10,20));
+          changeStat('faith', rand(4,8));
+          changeStat('reputation', rand(3,6));
+          return { badge: 'Faith +6  Rep +4', text: 'You speak to the steward. Mrs Yate\'s rent is reduced for the remainder of the year. She receives the news without quite crying, which costs her visible effort. You are glad you could do it.' };
+        },
+      },
+      {
+        text: 'Offer practical help instead — provisions, firewood',
+        outcome() {
+          G.wealth = Math.max(0, (G.wealth||0) - rand(5,10));
+          changeStat('faith', rand(3,6));
+          changeStat('reputation', rand(2,4));
+          return { badge: 'Faith +4  Rep +3', text: 'You cannot alter the rent, but you can send provisions. You do. Mrs Yate sends a note. It is brief and says everything it needs to.' };
+        },
+      },
+      {
+        text: 'Explain that rent decisions are your husband\'s',
+        outcome() {
+          changeStat('faith', -rand(1,3));
+          return { badge: 'Faith -2', text: 'It is true. It is also, in Mrs Yate\'s particular case, somewhat inadequate. She thanks you and leaves. You think about it for the rest of the week.' };
+        },
+      },
+    ],
+  },
+  {
+    title: 'A rumour about a village girl',
+    setup: 'A rumour is circulating about young Eliza March. A woman you respect has come to you quietly, worried. The rumour may be true, or it may be malicious — it is impossible to know from here.',
+    choices: [
+      {
+        text: 'Call on Eliza yourself and speak privately',
+        outcome() {
+          changeStat('faith', rand(3,6));
+          var roll = rand(1,10);
+          if (roll >= 5) {
+            changeStat('reputation', rand(2,5));
+            return { badge: 'Faith +4  Rep +3', text: 'You call on Eliza quietly. The situation is complicated. You listen for a long time and offer what help you can. The rumour does not spread further. You said nothing about it to anyone.' };
+          } else {
+            changeStat('reputation', -rand(1,3));
+            return { badge: 'Faith +4  Rep -2', text: 'You call on Eliza. The situation is not as the rumour had it. She is embarrassed that you came. You leave having done something between helpful and intrusive. It is hard to tell which.' };
+          }
+        },
+      },
+      {
+        text: 'Firmly discourage the woman from spreading it further',
+        outcome() {
+          changeStat('reputation', rand(2,5));
+          changeStat('faith', rand(1,3));
+          return { badge: 'Rep +3  Faith +2', text: 'You say plainly that you will not discuss this and ask the same of her. She agrees. Whether she keeps to it is another matter, but the conversation has weight. Rumours require air to survive.' };
+        },
+      },
+      {
+        text: 'Stay out of it entirely',
+        outcome() {
+          return { badge: '', text: 'You say you could not possibly comment. This is both wise and somewhat unsatisfying. The rumour runs its course as rumours do.' };
+        },
+      },
+    ],
+  },
+  {
+    title: 'The school roof',
+    setup: 'The village dame school needs a new roof before winter. The schoolmistress has written. She is too proud to ask directly so she has described the problem in great detail and then not asked. You understand her.',
+    choices: [
+      {
+        text: 'Contribute to the repairs yourself',
+        outcome() {
+          var cost = rand(15,40);
+          if ((G.wealth||0) < cost) {
+            return { badge: '', text: 'You want to help but the sum is beyond what you can presently manage. You write to the schoolmistress explaining this with more care than necessary.' };
+          }
+          G.wealth -= cost;
+          changeStat('reputation', rand(4,8));
+          changeStat('faith', rand(3,6));
+          return { badge: 'Rep +5  Faith +4  -\u00a3' + cost, text: 'You arrange for the repairs. The schoolmistress writes a letter of such formal gratitude that it takes you three readings to find the warmth in it. It is there.' };
+        },
+      },
+      {
+        text: 'Organise a parish collection',
+        outcome() {
+          changeStat('reputation', rand(5,9));
+          changeStat('wit', rand(2,4));
+          return { badge: 'Rep +6  Wit +3', text: 'You write six letters and speak to four households and within a fortnight the money is raised. You did not give the most — but you made it happen. The vicar says you have a talent for this. You suspect he is right.' };
+        },
+      },
+      {
+        text: 'Ignore the very pointed non-request',
+        outcome() {
+          changeStat('faith', -rand(2,4));
+          return { badge: 'Faith -3', text: 'The schoolmistress did not ask. You did not offer. The roof is patched badly in November and leaks through the winter. You know about it. So does the schoolmistress. Neither of you mentions it.' };
+        },
+      },
+    ],
+  },
+];
+
+function openVillageComes() {
+  // Rename from hear grievances — pick a random issue
+  var issue = pick(VILLAGE_ISSUES);
+  addFeedEntry('Someone from the village comes to you.', 'event');
+
+  queuePopup(
+    issue.title + '\n\n' + issue.setup,
+    null,
+    issue.choices.map(function(c) {
+      return {
+        text: c.text,
+        fn() {
+          var result = c.outcome();
+          addFeedEntry(issue.title + ': ' + c.text.toLowerCase() + '.', 'event');
+          queuePopup(result.text, result.badge || null);
+          renderStats(); saveGame(); return null;
+        },
+      };
+    }).concat([
+      { text: 'Not today', fn() { return {}; } },
+    ])
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// THE MODISTE — Fashion, gossip, and the pursuit of elegance
+// ═══════════════════════════════════════════════════════════
+
+// Player's wardrobe — list of purchased garments
+// Each: { id, name, type, cost, fashionBonus, looksBonus, desc, season, owned:true }
+var MODISTE_CATALOGUE = [
+  // Day wear
+  { id:'muslin_morning',  name:'White Muslin Morning Dress',   type:'day',     cost:8,   fashionBonus:4,  looksBonus:2,  desc:'Simple, fresh, entirely appropriate. The foundation of any wardrobe.' },
+  { id:'walking_dress',   name:'Pale Blue Walking Dress',      type:'day',     cost:15,  fashionBonus:6,  looksBonus:3,  desc:'Good wool, good cut. A dress that says you take yourself seriously.' },
+  { id:'half_dress',      name:'Silk Half-Dress in Rose',      type:'evening', cost:30,  fashionBonus:10, looksBonus:5,  desc:'For dinners and card evenings. Not a ball gown, but elegant.' },
+  { id:'riding_habit',    name:'Dark Green Riding Habit',      type:'riding',  cost:25,  fashionBonus:7,  looksBonus:4,  desc:'Tailored. Authoritative. You look magnificent on a horse.' },
+  // Evening
+  { id:'white_ball_gown', name:'White Satin Ball Gown',        type:'ball',    cost:45,  fashionBonus:15, looksBonus:8,  desc:'The gown for a Season. Understated luxury. You will be noticed.' },
+  { id:'gold_silk_gown',  name:'Gold Silk Evening Gown',       type:'ball',    cost:60,  fashionBonus:18, looksBonus:10, desc:'Daring. Expensive. Not for the faint of heart or thin of purse.' },
+  { id:'court_dress',     name:'Court Presentation Dress',     type:'court',   cost:80,  fashionBonus:20, looksBonus:12, desc:'Required for court. Enormous, uncomfortable, and absolutely necessary.' },
+  // Accessories
+  { id:'spencer_jacket',  name:'Crimson Spencer Jacket',       type:'accessory',cost:12, fashionBonus:5,  looksBonus:2,  desc:'Over a white dress. The effect is striking.' },
+  { id:'chip_bonnet',     name:'Chip Straw Bonnet',            type:'accessory',cost:6,  fashionBonus:3,  looksBonus:1,  desc:'Very fashionable this season. Becoming on almost everyone.' },
+  { id:'cashmere_shawl',  name:'Cashmere Shawl',               type:'accessory',cost:20, fashionBonus:8,  looksBonus:3,  desc:'From India, or so they say. Drapes beautifully. Keeps you warm.' },
+  { id:'long_gloves',     name:'Long White Evening Gloves',    type:'accessory',cost:5,  fashionBonus:4,  looksBonus:2,  desc:'Essential for evening. The finishing touch.' },
+];
+
+function openModiste() {
+  var modisteName = G._modisteName;
+  if (!modisteName) {
+    var firstNames = ['Madame Leclerc','Madame Voss','Madame Fontaine','Miss Partridge','Mrs Elliot'];
+    modisteName = pick(firstNames);
+    G._modisteName = modisteName;
+  }
+
+  var owned = (G.wardrobe || []).map(function(w){ return w.id; });
+  var unowned = MODISTE_CATALOGUE.filter(function(g){ return !owned.includes(g.id); });
+
+  queuePopup(
+    'The Modiste\n' + modisteName + '\n\nFashion: ' + (G.fashion||0) + '/100\nYour wealth: \u00a3' + (G.wealth||0).toLocaleString(),
+    null,
+    [
+      { text: 'Browse the new collection',        fn() { openModisteBrowse(unowned);   return null; } },
+      { text: 'Browse fashion plates',            fn() { openFashionPlates();          return null; } },
+      { text: 'Gossip with ' + modisteName,       fn() { openModisteGossip();          return null; } },
+      { text: 'Commission a bespoke gown',        fn() { openBespokeCommission();      return null; } },
+      { text: 'Review your wardrobe',             fn() { openWardrobeView();           return null; } },
+      { text: '\u2190 Activities', fn() { switchView('activities'); renderCatView('activities'); return null; } },
+    ]
+  );
+}
+
+function openModisteBrowse(unowned) {
+  if (!unowned || !unowned.length) {
+    queuePopup('You already own everything in the current collection. ' + (G._modisteName||'The modiste') + ' looks simultaneously impressed and disappointed.', null,
+      [{ text: '\u2190 Modiste', fn() { openModiste(); return null; } }]);
+    return;
+  }
+
+  // Show up to 5 unowned items
+  var available = unowned.slice(0, 5);
+  queuePopup(
+    'New Collection\n\nWhat catches your eye?',
+    null,
+    available.map(function(item) {
+      var canAfford = (G.wealth||0) >= item.cost;
+      return {
+        text: item.name + ' \u2014 \u00a3' + item.cost
+          + (!canAfford ? ' (cannot afford)' : ''),
+        fn() {
+          openModisteItemDetail(item);
+          return null;
+        },
+      };
+    }).concat([
+      { text: '\u2190 Modiste', fn() { openModiste(); return null; } },
+    ])
+  );
+}
+
+function openModisteItemDetail(item) {
+  var canAfford = (G.wealth||0) >= item.cost;
+  queuePopup(
+    item.name + '\n\n' + item.desc + '\n\nCost: \u00a3' + item.cost
+      + '\nFashion: +' + item.fashionBonus
+      + '\nLooks: +' + item.looksBonus,
+    null,
+    [
+      canAfford ? {
+        text: 'Purchase (\u00a3' + item.cost + ')',
+        fn() {
+          G.wealth -= item.cost;
+          if (!G.wardrobe) G.wardrobe = [];
+          G.wardrobe.push({ id: item.id, name: item.name, type: item.type, purchasedSeason: G.season });
+          G.fashion = Math.min(100, (G.fashion||0) + item.fashionBonus);
+          changeStat('looks', item.looksBonus);
+          addFeedEntry('You purchase a ' + item.name + '.', 'good');
+          queuePopup(
+            'The gown is wrapped in tissue and ribbons. You wear it home and feel immediately better about everything.',
+            'Fashion +' + item.fashionBonus + '  Looks +' + item.looksBonus + '  -\u00a3' + item.cost,
+            null,
+            function() { openModiste(); }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      } : { text: 'Cannot afford at present', fn() { openModiste(); return null; } },
+      { text: 'Admire but resist',
+        fn() {
+          // Browsing still gives a small fashion awareness boost
+          G.fashion = Math.min(100, (G.fashion||0) + 1);
+          queuePopup('You study the gown carefully and commit every detail to memory. One day.', null, null, function(){ openModisteBrowse(MODISTE_CATALOGUE.filter(function(g){ return !(G.wardrobe||[]).find(function(w){return w.id===g.id;}); })); });
+          return null;
+        },
+      },
+      { text: '\u2190 Back', fn() { openModisteBrowse(MODISTE_CATALOGUE.filter(function(g){ return !(G.wardrobe||[]).find(function(w){return w.id===g.id;}); })); return null; } },
+    ]
+  );
+}
+
+function openFashionPlates() {
+  // Browsing fashion plates — free fashion boost + wit
+  var fashionGain = rand(3, 8);
+  G.fashion = Math.min(100, (G.fashion||0) + fashionGain);
+  changeStat('wit', rand(1, 3));
+
+  var plateMsgs = [
+    'The French plates are extraordinary this season. Waistlines have moved again. You study them for half an hour and emerge with several strong opinions.',
+    'La Belle Assembl\u00e9e has arrived. You go through it three times. The evening dress on page twelve is going to be everywhere.',
+    'You spend an agreeable hour with Ackermann\'s Repository. The fashions are daring. You take notes.',
+    'The newest plates show sleeves of impossible construction. You cannot decide if they are ridiculous or sublime. Probably both.',
+    'You study the plates with the focused attention usually reserved for scripture. The trim on the third plate will transform a plain gown entirely.',
+  ];
+  addFeedEntry('You browse the fashion plates.', 'good');
+  queuePopup(pick(plateMsgs), 'Fashion +' + fashionGain, null, function(){ openModiste(); });
+  renderStats(); saveGame();
+}
+
+function openModisteGossip() {
+  var modisteName = G._modisteName || 'The modiste';
+
+  // Modiste knows everything — generates Society gossip
+  var gossipPool = [
+    { text: modisteName + ' informs you, while measuring your waist, that Lady Featherington\'s ball gown last Tuesday was not, in fact, her own design. The real provenance is much more interesting.', rep: rand(2,5), fashion: rand(1,3) },
+    { text: 'While she pins your hem, ' + modisteName + ' mentions that a certain young man has been ordering waistcoats at a remarkable rate. A sure sign, she says, of a man in love.', wit: rand(2,4), fashion: rand(1,2) },
+    { text: modisteName + ' tells you, in strictest confidence, that three different ladies have ordered the same gown this Season. She appears to be savouring this information.', fashion: rand(2,5) },
+    { text: 'You learn that the Duchess of — has her court mantua made here. ' + modisteName + ' shows you the pattern book. Briefly. Just long enough to see.', fashion: rand(3,6), rep: rand(1,3) },
+    { text: 'The conversation turns to a recent scandal. ' + modisteName + ' has dressed everyone involved at various points and is diplomatically uninformative, which tells you a great deal.', wit: rand(3,6) },
+    { text: modisteName + ' mentions that yellow is going to be very fashionable this Autumn. She has it from an unimpeachable source. You resolve to get ahead of it.', fashion: rand(4,8) },
+  ];
+
+  var gossip = pick(gossipPool);
+  if (gossip.rep)    changeStat('reputation', gossip.rep);
+  if (gossip.wit)    changeStat('wit', gossip.wit);
+  if (gossip.fashion) G.fashion = Math.min(100, (G.fashion||0) + gossip.fashion);
+
+  addFeedEntry('You gossip with ' + modisteName + '.', 'good');
+
+  var badge = '';
+  if (gossip.fashion) badge += 'Fashion +' + gossip.fashion + '  ';
+  if (gossip.wit)     badge += 'Wit +'     + gossip.wit     + '  ';
+  if (gossip.rep)     badge += 'Rep +'     + gossip.rep;
+
+  queuePopup(gossip.text, badge.trim() || null, null, function(){ openModiste(); });
+  renderStats(); saveGame();
+}
+
+function openBespokeCommission() {
+  // Commission something specific — expensive, slow, but significant fashion boost
+  if ((G.wealth||0) < 30) {
+    queuePopup('A bespoke commission requires at least \u00a330. Perhaps after the next season.', null,
+      [{ text: '\u2190 Modiste', fn() { openModiste(); return null; } }]);
+    return;
+  }
+
+  queuePopup(
+    'Commission a Bespoke Gown\n\nIt will take a full season. The cost is significant. The result, ' + (G._modisteName||'she') + ' assures you, will be extraordinary.',
+    null,
+    [
+      { text: 'Commission a ball gown (\u00a360)',    fn() { placeBesokeOrder('ball gown',   60,  22, 12); return null; } },
+      { text: 'Commission a walking dress (\u00a330)', fn() { placeBesokeOrder('walking dress',30,  12, 6); return null; } },
+      { text: 'Commission a riding habit (\u00a340)',  fn() { placeBesokeOrder('riding habit', 40,  14, 8); return null; } },
+      { text: 'Commission morning dress (\u00a320)',   fn() { placeBesokeOrder('morning dress',20,  8,  5); return null; } },
+      { text: '\u2190 Modiste', fn() { openModiste(); return null; } },
+    ]
+  );
+}
+
+function placeBesokeOrder(type, cost, fashionBonus, looksBonus) {
+  if ((G.wealth||0) < cost) { queuePopup('You cannot presently afford this commission.'); openModiste(); return; }
+  G.wealth -= cost;
+  // The gown arrives next season — store as a pending delivery
+  if (!G._bespokeOrder) {
+    G._bespokeOrder = { type: type, cost: cost, fashionBonus: fashionBonus, looksBonus: looksBonus, deliverySeason: G.season === 'Spring' ? 'Autumn' : 'Spring' };
+    addFeedEntry('You commission a bespoke ' + type + '.', 'good');
+    queuePopup(
+      (G._modisteName||'The modiste') + ' takes your measurements with great seriousness and promises delivery by ' + G._bespokeOrder.deliverySeason + '.\n\nYou leave feeling as though you have done something significant. You have.',
+      '-\u00a3' + cost + '  Commission placed',
+      null, function(){ openModiste(); }
+    );
+    renderStats(); saveGame();
+  } else {
+    queuePopup('You already have a bespoke order in progress. Allow it to be completed first.', null,
+      [{ text: '\u2190 Modiste', fn() { openModiste(); return null; } }]);
+  }
+}
+
+function openWardrobeView() {
+  var wardrobe = G.wardrobe || [];
+  if (!wardrobe.length) {
+    queuePopup('Your wardrobe is as yet unadorned. A problem that ' + (G._modisteName||'the modiste') + ' stands ready to solve.', null,
+      [{ text: 'Browse the collection', fn() { openModisteBrowse(MODISTE_CATALOGUE); return null; } },
+       { text: '\u2190 Modiste', fn() { openModiste(); return null; } }]);
+    return;
+  }
+
+  var typeLabels = { day:'Day wear', evening:'Evening', ball:'Ball gown', court:'Court', riding:'Riding', accessory:'Accessory' };
+  var byType = {};
+  wardrobe.forEach(function(w) {
+    var t = w.type || 'other';
+    if (!byType[t]) byType[t] = [];
+    byType[t].push(w);
+  });
+
+  var lines = ['Your wardrobe (' + wardrobe.length + ' pieces):\n'];
+  Object.keys(byType).forEach(function(t) {
+    lines.push((typeLabels[t]||t) + ': ' + byType[t].map(function(w){ return w.name; }).join(', '));
+  });
+
+  queuePopup(lines.join('\n'), null, [{ text: '\u2190 Modiste', fn() { openModiste(); return null; } }]);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// TEA PARTY
+// ═══════════════════════════════════════════════════════════
+
+function openTeaParty() {
+  var hasCook = G.household && G.household.staff && G.household.staff.cook && G.household.staff.cook.hired;
+  queuePopup(
+    'Tea Party\n\nMorning calls, afternoon tea, and the careful art of social management.',
+    null,
+    [
+      {
+        text: 'Attend a neighbour\'s tea',
+        fn() {
+          var rep = rand(2,5); changeStat('reputation', rep);
+          var fashion = rand(1,3);
+          G.fashion = Math.min(100, (G.fashion||0) + fashion);
+          var friends = (G.npcs||[]).filter(function(n){ return n.introduced && !n.isRival; });
+          var close = friends.length ? rand(3,8) : 0;
+          if (friends.length) changeCloseness(pick(friends), close);
+          var msgs = [
+            'A pleasant afternoon. The tea is excellent, the company agreeable, and you leave knowing rather more than when you arrived.',
+            'Mrs — gives a tea at which the gossip is extraordinary and the sandwiches are better. A successful afternoon on both counts.',
+            'You spend three hours at a neighbour\'s table. The conversation is lively. Two alliances are formed and one is ended. None of them yours.',
+            'A quiet tea. Sometimes quiet is exactly right.',
+          ];
+          addFeedEntry('You attend a tea party.', 'good');
+          queuePopup(pick(msgs), 'Rep +' + rep + (close ? '  Closeness +' + close : ''));
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Host a tea at home' + (hasCook ? '' : ' \u2014 no cook'),
+        fn() {
+          if (!hasCook) {
+            queuePopup('A tea without a cook is a tea without any proper sandwiches. The guests would notice.', null,
+              [{ text: 'Host anyway (it will be remarked upon)', fn() {
+                changeStat('reputation', -rand(3,6));
+                queuePopup('You host. The tea is improvised. The biscuits are shop-bought. Several guests remark on this. Not kindly.', 'Rep -4');
+                renderStats(); saveGame(); return null;
+              }},
+               { text: 'Perhaps not today', fn() { return {}; } }]);
+            return null;
+          }
+          var cost = rand(3,8); G.wealth -= cost;
+          var rep = rand(3,7); changeStat('reputation', rep);
+          var friends = (G.npcs||[]).filter(function(n){ return n.introduced && !n.isRival; });
+          friends.slice(0,3).forEach(function(n){ changeCloseness(n, rand(2,5)); });
+          addFeedEntry('You host a tea party.', 'good');
+          queuePopup(
+            'Your drawing room is at its best. The tea is perfectly brewed, the company well-chosen, and the conversation entirely satisfactory.',
+            'Rep +' + rep + '  -\u00a3' + cost
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Host and invite a society leader (risky)',
+        fn() {
+          if (!hasCook) { queuePopup('You cannot invite Lady — to a tea without a cook. That would be an act of social self-destruction.'); return null; }
+          if ((G.reputation||0) < 50) {
+            queuePopup('Your reputation is not yet quite high enough to risk this. Build your connections first.');
+            return null;
+          }
+          // High-stakes invitation
+          var roll = rand(1,10);
+          var standScore = typeof standingScore === 'function' ? standingScore() : 50;
+          var threshold = standScore >= 70 ? 4 : standScore >= 55 ? 6 : 8;
+          if (roll >= threshold) {
+            changeStat('reputation', rand(10,18));
+            G.fashion = Math.min(100, (G.fashion||0) + rand(4,8));
+            addFeedEntry('Lady — accepts your invitation. A triumph.', 'good');
+            queuePopup(
+              'She comes. She stays an hour. She tells you the drawing room curtains are "very nearly" right, which from her is practically a sonnet of praise. The district will hear of this for a month.',
+              'Rep +14  Fashion +6'
+            );
+          } else {
+            changeStat('reputation', -rand(5,10));
+            addFeedEntry('Lady — declines. Pointedly.', 'bad');
+            queuePopup(
+              'The refusal arrives by note. It is brief, polite, and devastating. The problem with inviting someone above your current station is that the rejection is also very public.',
+              'Rep -7'
+            );
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Enquire about a fertility tonic (£10)',
+        fn() {
+          if (!G.isMarried) {
+            queuePopup('Dr — raises an eyebrow. This is not a conversation he expects to have with an unmarried lady.');
+            return null;
+          }
+          if ((G.wealth||0) < 10) { queuePopup('You cannot afford the consultation.'); return null; }
+          G.wealth -= 10;
+          var fertility = G.fertility !== undefined ? G.fertility : 65;
+
+          // The doctor speaks in careful euphemisms
+          var doctorAssessment;
+          if (fertility < 20) {
+            doctorAssessment = 'Dr — examines you carefully and speaks in the measured tones of a man choosing his words with great care. "There are constitutional difficulties," he says. "I will not pretend otherwise. But I have seen surprising things."';
+          } else if (fertility < 45) {
+            doctorAssessment = 'Dr — is cautious. "The constitution is somewhat delicate in this regard," he says. "A course of treatment may help. I make no promises."';
+          } else {
+            doctorAssessment = 'Dr — finds nothing alarming. "You are in generally good health," he says. "Patience is, in my experience, the most effective treatment."';
+          }
+
+          queuePopup(
+            doctorAssessment + '\n\nHe can prescribe a tonic \u2014 iron, herbs, and something imported at considerable expense from a physician in Bath. The results are uncertain.',
+            null,
+            [
+              {
+                text: 'Take the tonic (£5 more)',
+                fn() {
+                  if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+                  G.wealth -= 5;
+                  var roll = Math.random();
+                  if (roll < 0.15) {
+                    // Harmful — quackery
+                    var harm = rand(8, 18);
+                    G.fertility = Math.max(0, (G.fertility||65) - harm);
+                    changeStat('health', -rand(3, 8));
+                    addFeedEntry('The fertility tonic does not agree with you.', 'bad');
+                    queuePopup(
+                      'The tonic disagrees with you considerably. You are unwell for a fortnight. Dr — does not mention it when you next see him, which you find unsatisfactory.',
+                      'Health -5  Fertility reduced'
+                    );
+                  } else if (roll < 0.55) {
+                    // No effect — most likely outcome
+                    addFeedEntry('The tonic has no discernible effect.', 'event');
+                    queuePopup(
+                      'You take the tonic faithfully for a month. It tastes of iron and something you cannot identify. Whether it has done anything useful is impossible to say.',
+                      'No discernible effect'
+                    );
+                  } else {
+                    // Beneficial
+                    var gain = rand(5, 15);
+                    G.fertility = Math.min(100, (G.fertility||65) + gain);
+                    addFeedEntry('The tonic seems to have helped.', 'good');
+                    queuePopup(
+                      'Whether it is the tonic or simply time, you feel rather better in yourself. Something has settled.',
+                      'Fertility improved'
+                    );
+                  }
+                  renderStats(); saveGame(); return null;
+                },
+              },
+              { text: 'Decline the tonic', fn() { queuePopup('You thank the doctor and take your leave.'); saveGame(); return null; } },
+            ]
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '← Activities', fn() { switchView('activities'); renderCatView('activities'); return null; } },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// CARDS
+// ═══════════════════════════════════════════════════════════
+
+function openCards() {
+  queuePopup(
+    'Cards\n\nWhist, loo, and the odd rubber of piquet. Society runs on cards.',
+    null,
+    [
+      {
+        text: 'Play a friendly rubber (no stakes)',
+        fn() {
+          changeStat('wit', rand(1,3));
+          changeStat('reputation', rand(1,3));
+          var msgs = [
+            'A pleasant evening of whist. Nobody wins enough to matter and nobody loses enough to suffer. Perfectly civilised.',
+            'You play piquet with two neighbours. The cards are excellent company.',
+            'Three rubbers of whist. Your partner is bad but convivial. You win anyway.',
+          ];
+          addFeedEntry('You play cards.', 'good');
+          queuePopup(pick(msgs), 'Wit +2');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Play for modest stakes (\u00a32)',
+        fn() {
+          if ((G.wealth||0) < 2) { queuePopup('You cannot afford to stake even a modest sum.'); return null; }
+          var roll = rand(1,10);
+          var witMod = Math.floor(((G.wit||50) - 50) / 10); // -4 to +4
+          if (roll + witMod >= 6) {
+            var win = rand(2,8); G.wealth += win;
+            changeStat('wit', rand(1,2));
+            addFeedEntry('You win at cards.', 'good');
+            queuePopup('The cards run well tonight. You play carefully and win \u00a3' + win + '. Nothing to alarm anyone.', 'Wit +1  +\u00a3' + win);
+          } else {
+            var loss = rand(2,5); G.wealth = Math.max(0, G.wealth - loss);
+            addFeedEntry('You lose at cards.', 'event');
+            queuePopup('The cards go against you. You lose \u00a3' + loss + '. The polite thing is to smile about it.', '-\u00a3' + loss);
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Play for high stakes (\u00a310) \u2014 dangerous',
+        fn() {
+          if ((G.wealth||0) < 10) { queuePopup('You cannot afford these stakes.'); return null; }
+          var roll = rand(1,10);
+          var witMod = Math.floor(((G.wit||50) - 50) / 10);
+          if (roll + witMod >= 7) {
+            var win = rand(10,30); G.wealth += win;
+            changeStat('wit', rand(2,4));
+            changeStat('reputation', rand(2,5));
+            addFeedEntry('A considerable win at cards.', 'good');
+            queuePopup('You win \u00a3' + win + '. The table is silent for a moment. You accept it graciously.', 'Wit +3  +\u00a3' + win);
+          } else if (roll + witMod >= 4) {
+            var loss = rand(8,15); G.wealth = Math.max(0, G.wealth - loss);
+            addFeedEntry('You lose at cards.', 'bad');
+            queuePopup('You lose \u00a3' + loss + '. It stings but is not ruinous. You smile through it.', '-\u00a3' + loss);
+          } else {
+            var ruinLoss = rand(15,35); G.wealth = Math.max(0, G.wealth - ruinLoss);
+            G.scandals = (G.scandals||0) + 1;
+            changeStat('reputation', -rand(5,10));
+            addFeedEntry('A serious loss at cards. People have noticed.', 'bad');
+            queuePopup(
+              'The evening goes badly wrong. You lose \u00a3' + ruinLoss + '. The amount is talked about. Ladies do not gamble like this. You are aware.',
+              'Rep -7  Scandal  -\u00a3' + ruinLoss
+            );
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Enquire about a fertility tonic (£10)',
+        fn() {
+          if (!G.isMarried) {
+            queuePopup('Dr — raises an eyebrow. This is not a conversation he expects to have with an unmarried lady.');
+            return null;
+          }
+          if ((G.wealth||0) < 10) { queuePopup('You cannot afford the consultation.'); return null; }
+          G.wealth -= 10;
+          var fertility = G.fertility !== undefined ? G.fertility : 65;
+
+          // The doctor speaks in careful euphemisms
+          var doctorAssessment;
+          if (fertility < 20) {
+            doctorAssessment = 'Dr — examines you carefully and speaks in the measured tones of a man choosing his words with great care. "There are constitutional difficulties," he says. "I will not pretend otherwise. But I have seen surprising things."';
+          } else if (fertility < 45) {
+            doctorAssessment = 'Dr — is cautious. "The constitution is somewhat delicate in this regard," he says. "A course of treatment may help. I make no promises."';
+          } else {
+            doctorAssessment = 'Dr — finds nothing alarming. "You are in generally good health," he says. "Patience is, in my experience, the most effective treatment."';
+          }
+
+          queuePopup(
+            doctorAssessment + '\n\nHe can prescribe a tonic — iron, herbs, and something imported at considerable expense from a physician in Bath. The results are uncertain.',
+            null,
+            [
+              {
+                text: 'Take the tonic (£5 more)',
+                fn() {
+                  if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+                  G.wealth -= 5;
+                  var roll = Math.random();
+                  if (roll < 0.15) {
+                    // Harmful — quackery
+                    var harm = rand(8, 18);
+                    G.fertility = Math.max(0, (G.fertility||65) - harm);
+                    changeStat('health', -rand(3, 8));
+                    addFeedEntry('The fertility tonic does not agree with you.', 'bad');
+                    queuePopup(
+                      'The tonic disagrees with you considerably. You are unwell for a fortnight. Dr — does not mention it when you next see him, which you find unsatisfactory.',
+                      'Health -5  Fertility reduced'
+                    );
+                  } else if (roll < 0.55) {
+                    // No effect — most likely outcome
+                    addFeedEntry('The tonic has no discernible effect.', 'event');
+                    queuePopup(
+                      'You take the tonic faithfully for a month. It tastes of iron and something you cannot identify. Whether it has done anything useful is impossible to say.',
+                      'No discernible effect'
+                    );
+                  } else {
+                    // Beneficial
+                    var gain = rand(5, 15);
+                    G.fertility = Math.min(100, (G.fertility||65) + gain);
+                    addFeedEntry('The tonic seems to have helped.', 'good');
+                    queuePopup(
+                      'Whether it is the tonic or simply time, you feel rather better in yourself. Something has settled.',
+                      'Fertility improved'
+                    );
+                  }
+                  renderStats(); saveGame(); return null;
+                },
+              },
+              { text: 'Decline the tonic', fn() { queuePopup('You thank the doctor and take your leave.'); saveGame(); return null; } },
+            ]
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '← Activities', fn() { switchView('activities'); renderCatView('activities'); return null; } },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// CHARITY WORK
+// ═══════════════════════════════════════════════════════════
+
+function openCharityWork() {
+  queuePopup(
+    'Charity Work\n\nGood works, quietly done. Or not so quietly, as occasion demands.',
+    null,
+    [
+      {
+        text: 'Teach at the Sunday school',
+        fn() {
+          changeStat('faith', rand(3,7));
+          changeStat('wit', rand(1,3));
+          changeStat('reputation', rand(2,4));
+          var msgs = [
+            'You take the Sunday school class. The children are more attentive than expected, and several questions are genuinely difficult.',
+            'Three hours with the village children. They are exhausting and occasionally extraordinary.',
+            'Sunday school. You teach reading and receive in return a somewhat chaotic education in local village life.',
+          ];
+          addFeedEntry('You teach at the Sunday school.', 'good');
+          queuePopup(pick(msgs), 'Faith +5  Wit +2  Rep +3');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Organise relief for a poor family',
+        fn() {
+          var cost = rand(5,15);
+          if ((G.wealth||0) < cost) { queuePopup('You cannot presently afford to help as much as you would wish.'); return null; }
+          G.wealth -= cost;
+          changeStat('faith', rand(4,8));
+          changeStat('reputation', rand(2,5));
+          addFeedEntry('You organise relief for a family in need.', 'good');
+          queuePopup(
+            'You arrange provisions, fuel, and a small sum for a family who needed it and were too proud to ask. You say nothing about it to anyone who does not need to know.',
+            'Faith +6  Rep +3  -\u00a3' + cost
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Visit the almshouses',
+        fn() {
+          changeStat('faith', rand(4,8));
+          changeStat('health', -rand(1,3));
+          changeStat('reputation', rand(1,3));
+          addFeedEntry('You visit the almshouses.', 'good');
+          queuePopup(
+            'A morning at the almshouses. The residents are glad of company. You read to two of them and listen to a third for a very long time. You leave tired and grateful.',
+            'Faith +6'
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Consider making this a vocation \u2014 one day',
+        fn() {
+          // Seed for future career system
+          if (!G.charityInterest) G.charityInterest = 0;
+          G.charityInterest++;
+          changeStat('faith', rand(2,4));
+          var threshold = 3;
+          if (G.charityInterest >= threshold) {
+            addFeedEntry('You find yourself drawn, increasingly, to this work.', 'event');
+            queuePopup(
+              'You have been thinking about it. There are societies, in London and in the counties, that do this kind of work properly. Women who have made it their life\u2019s purpose. You are not sure you are ready. But the thought does not go away.',
+              'A direction forming'
+            );
+          } else {
+            queuePopup('You think about it on the walk home. You think about it again in the evening. Something is forming.');
+          }
+          saveGame(); return null;
+        },
+      },
+      {
+        text: 'Enquire about a fertility tonic (£10)',
+        fn() {
+          if (!G.isMarried) {
+            queuePopup('Dr — raises an eyebrow. This is not a conversation he expects to have with an unmarried lady.');
+            return null;
+          }
+          if ((G.wealth||0) < 10) { queuePopup('You cannot afford the consultation.'); return null; }
+          G.wealth -= 10;
+          var fertility = G.fertility !== undefined ? G.fertility : 65;
+
+          // The doctor speaks in careful euphemisms
+          var doctorAssessment;
+          if (fertility < 20) {
+            doctorAssessment = 'Dr — examines you carefully and speaks in the measured tones of a man choosing his words with great care. "There are constitutional difficulties," he says. "I will not pretend otherwise. But I have seen surprising things."';
+          } else if (fertility < 45) {
+            doctorAssessment = 'Dr — is cautious. "The constitution is somewhat delicate in this regard," he says. "A course of treatment may help. I make no promises."';
+          } else {
+            doctorAssessment = 'Dr — finds nothing alarming. "You are in generally good health," he says. "Patience is, in my experience, the most effective treatment."';
+          }
+
+          queuePopup(
+            doctorAssessment + '\n\nHe can prescribe a tonic — iron, herbs, and something imported at considerable expense from a physician in Bath. The results are uncertain.',
+            null,
+            [
+              {
+                text: 'Take the tonic (£5 more)',
+                fn() {
+                  if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+                  G.wealth -= 5;
+                  var roll = Math.random();
+                  if (roll < 0.15) {
+                    // Harmful — quackery
+                    var harm = rand(8, 18);
+                    G.fertility = Math.max(0, (G.fertility||65) - harm);
+                    changeStat('health', -rand(3, 8));
+                    addFeedEntry('The fertility tonic does not agree with you.', 'bad');
+                    queuePopup(
+                      'The tonic disagrees with you considerably. You are unwell for a fortnight. Dr — does not mention it when you next see him, which you find unsatisfactory.',
+                      'Health -5  Fertility reduced'
+                    );
+                  } else if (roll < 0.55) {
+                    // No effect — most likely outcome
+                    addFeedEntry('The tonic has no discernible effect.', 'event');
+                    queuePopup(
+                      'You take the tonic faithfully for a month. It tastes of iron and something you cannot identify. Whether it has done anything useful is impossible to say.',
+                      'No discernible effect'
+                    );
+                  } else {
+                    // Beneficial
+                    var gain = rand(5, 15);
+                    G.fertility = Math.min(100, (G.fertility||65) + gain);
+                    addFeedEntry('The tonic seems to have helped.', 'good');
+                    queuePopup(
+                      'Whether it is the tonic or simply time, you feel rather better in yourself. Something has settled.',
+                      'Fertility improved'
+                    );
+                  }
+                  renderStats(); saveGame(); return null;
+                },
+              },
+              { text: 'Decline the tonic', fn() { queuePopup('You thank the doctor and take your leave.'); saveGame(); return null; } },
+            ]
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '← Activities', fn() { switchView('activities'); renderCatView('activities'); return null; } },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// PHYSICIAN
+// ═══════════════════════════════════════════════════════════
+
+function openPhysician() {
+  if ((G.wealth||0) < 5) { queuePopup('A physician\'s visit requires at least \u00a35.'); return; }
+
+  queuePopup(
+    'The Physician\n\nDr — attends. He peers at you gravely, as physicians do.',
+    null,
+    [
+      {
+        text: 'A general consultation (\u00a35)',
+        fn() {
+          if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+          G.wealth -= 5;
+          var health = rand(5,12); changeStat('health', health);
+          var msgs = [
+            'Dr — takes your pulse, examines your tongue, and prescribes rest and a tonic. The tonic is unpleasant. The rest is excellent.',
+            'A thorough consultation. The doctor finds nothing alarming and prescribes fresh air and exercise, which you already knew.',
+            'Dr — is reassuring in a way that is itself slightly alarming. Everything is, he says, quite satisfactory. You believe him.',
+            'The doctor prescribes iron drops and a reduction in social engagements. You will take the iron drops.',
+          ];
+          addFeedEntry('You visit the physician.', 'good');
+          queuePopup(pick(msgs), 'Health +' + health + '  -\u00a35');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Specific complaint \u2014 nerves (\u00a35)',
+        fn() {
+          if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+          G.wealth -= 5;
+          changeStat('health', rand(3,8));
+          changeStat('wit', rand(1,3)); // rest and reflection
+          addFeedEntry('You consult the physician about your nerves.', 'event');
+          queuePopup(
+            'Dr — listens carefully to your account of the past month. He prescribes sal volatile, fewer calls, and possibly a book. He is not wrong about any of it.',
+            'Health +5  Wit +2  -\u00a35'
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'A serious consultation (\u00a315) \u2014 thorough examination',
+        fn() {
+          if ((G.wealth||0) < 15) { queuePopup('You cannot afford a full consultation at present.'); return null; }
+          G.wealth -= 15;
+          var health = rand(10,20); changeStat('health', health);
+          var msgs = [
+            'A thorough examination. Dr — is satisfied that everything is in order and prescribes a month of country air. You feel considerably better for having been told so officially.',
+            'The doctor examines you fully, asks difficult questions, and ultimately concludes that you are constitutionally sound. The relief is considerable.',
+            'A proper consultation. The news is good. You pay \u00a315 to be told you are healthy, which is worth every penny.',
+          ];
+          addFeedEntry('You have a full consultation with the physician.', 'good');
+          queuePopup(pick(msgs), 'Health +' + health + '  -\u00a315');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Enquire about a fertility tonic (£10)',
+        fn() {
+          if (!G.isMarried) {
+            queuePopup('Dr — raises an eyebrow. This is not a conversation he expects to have with an unmarried lady.');
+            return null;
+          }
+          if ((G.wealth||0) < 10) { queuePopup('You cannot afford the consultation.'); return null; }
+          G.wealth -= 10;
+          var fertility = G.fertility !== undefined ? G.fertility : 65;
+
+          // The doctor speaks in careful euphemisms
+          var doctorAssessment;
+          if (fertility < 20) {
+            doctorAssessment = 'Dr — examines you carefully and speaks in the measured tones of a man choosing his words with great care. "There are constitutional difficulties," he says. "I will not pretend otherwise. But I have seen surprising things."';
+          } else if (fertility < 45) {
+            doctorAssessment = 'Dr — is cautious. "The constitution is somewhat delicate in this regard," he says. "A course of treatment may help. I make no promises."';
+          } else {
+            doctorAssessment = 'Dr — finds nothing alarming. "You are in generally good health," he says. "Patience is, in my experience, the most effective treatment."';
+          }
+
+          queuePopup(
+            doctorAssessment + '\n\nHe can prescribe a tonic — iron, herbs, and something imported at considerable expense from a physician in Bath. The results are uncertain.',
+            null,
+            [
+              {
+                text: 'Take the tonic (£5 more)',
+                fn() {
+                  if ((G.wealth||0) < 5) { queuePopup('You cannot afford it.'); return null; }
+                  G.wealth -= 5;
+                  var roll = Math.random();
+                  if (roll < 0.15) {
+                    // Harmful — quackery
+                    var harm = rand(8, 18);
+                    G.fertility = Math.max(0, (G.fertility||65) - harm);
+                    changeStat('health', -rand(3, 8));
+                    addFeedEntry('The fertility tonic does not agree with you.', 'bad');
+                    queuePopup(
+                      'The tonic disagrees with you considerably. You are unwell for a fortnight. Dr — does not mention it when you next see him, which you find unsatisfactory.',
+                      'Health -5  Fertility reduced'
+                    );
+                  } else if (roll < 0.55) {
+                    // No effect — most likely outcome
+                    addFeedEntry('The tonic has no discernible effect.', 'event');
+                    queuePopup(
+                      'You take the tonic faithfully for a month. It tastes of iron and something you cannot identify. Whether it has done anything useful is impossible to say.',
+                      'No discernible effect'
+                    );
+                  } else {
+                    // Beneficial
+                    var gain = rand(5, 15);
+                    G.fertility = Math.min(100, (G.fertility||65) + gain);
+                    addFeedEntry('The tonic seems to have helped.', 'good');
+                    queuePopup(
+                      'Whether it is the tonic or simply time, you feel rather better in yourself. Something has settled.',
+                      'Fertility improved'
+                    );
+                  }
+                  renderStats(); saveGame(); return null;
+                },
+              },
+              { text: 'Decline the tonic', fn() { queuePopup('You thank the doctor and take your leave.'); saveGame(); return null; } },
+            ]
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      { text: '← Activities', fn() { switchView('activities'); renderCatView('activities'); return null; } },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// AUTONOMOUS PROPOSAL
+// ═══════════════════════════════════════════════════════════
+
+function fireAutonomousProposal(data) {
+  var suitor = data.suitor;
+
+  // If no pool suitor, generate one matched to standing
+  if (!suitor) {
+    var standScore = data.standScore || 50;
+    var wealthFloor = standScore >= 70 ? 3000 : standScore >= 55 ? 1500 : standScore >= 40 ? 600 : 200;
+    var wealthCeil  = wealthFloor * 4;
+    var w = rand(wealthFloor, wealthCeil);
+    var t = w > 5000 ? pick(['Lord','Sir','The Honourable'])
+          : w > 2000 ? 'Mr'
+          : pick(['Mr','Captain','Reverend']);
+    var base = typeof generateNPC === 'function' ? generateNPC('auto_prop_' + Date.now(), true) : { first:'A Gentleman', last:'', trait:'reserved', desc:'of good character' };
+    suitor = Object.assign({}, base, {
+      wealth: w, title: t,
+      fullName: t + ' ' + base.first + ' ' + base.last,
+      rankLabel: w > 5000 ? 'Gentleman of fortune' : w > 1500 ? 'Gentleman' : w > 800 ? 'Officer' : 'Clergyman',
+      titleRank: w > 5000 ? 3 : w > 2000 ? 1 : 0,
+      courtshipStyle: { label:'Conventional', flirtBonus:0, danceBonus:0 },
+    });
+  }
+
+
+  // Calculate compatibility for this proposal
+  if (suitor.compatibility === undefined && typeof calculateCompatibility === 'function') {
+    suitor.compatibility = calculateCompatibility(suitor);
+  }
+  var propCompatScore = suitor.compatibility || 50;
+  var propCompatLine  = typeof compatibilityLine === 'function'
+    ? compatibilityLine(propCompatScore, suitor.trait) : '';
+
+  // Proposal speeches matched to suitor trait/style
+  var speeches = [
+    suitor.first + ' requests a private word after the party. He is formal about it, which means he is serious. "Miss ' + G.name.split(' ')[0] + '. I have admired you for some time. I am asking whether you would consent to be my wife."',
+    suitor.first + ' writes a letter. It is three pages long and says, in essence, that he loves you. He asks for your answer at your convenience. The letter is very good.',
+    suitor.first + ' corners you in the garden with a transparency that is almost refreshing. "I have spoken to your father. Or your guardian. I should very much like to marry you. What do you say?"',
+    suitor.first + ' is awkward about it, which you find rather endearing. He starts three times before getting to the point. The point, once reached, is clear enough.',
+    '"I am not a man of many words," ' + suitor.first + ' says. He then proceeds to use quite a lot of them. The conclusion is a proposal. You were not entirely surprised.',
+  ];
+
+  addFeedEntry(suitor.fullName + ' proposes.', 'event');
+
+  queuePopup(
+    pick(speeches) + '\n\n' + suitor.fullName + ' \u2014 ' + suitor.rankLabel + ', \u00a3' + (suitor.wealth||0).toLocaleString() + '/yr.'
+      + (propCompatLine ? '\n\n' + propCompatLine : ''),
+    'Proposal',
+    [
+      {
+        text: 'Accept',
+        fn() {
+          if (typeof startWeddingPlanning === 'function') {
+            startWeddingPlanning(suitor);
+          } else {
+            if (typeof acceptProposal === 'function') acceptProposal(suitor);
+            addFeedEntry('You accept ' + suitor.fullName + '.', 'event');
+            queuePopup('You are engaged to ' + suitor.fullName + '.', 'Engaged \u2665');
+            renderStats(); saveGame();
+          }
+          return null;
+        },
+      },
+      {
+        text: 'Ask for time to consider',
+        fn() {
+          // Store for follow-up next season
+          if (!G._pendingProposal) G._pendingProposal = suitor;
+          addFeedEntry('You ask ' + suitor.first + ' for time to consider.', 'event');
+          queuePopup(
+            suitor.first + ' accepts your hesitation with quiet dignity. He will wait to hear from you.',
+            'Proposal pending'
+          );
+          saveGame(); return null;
+        },
+      },
+      {
+        text: 'Decline',
+        fn() {
+          // Age-based reputation modifier — declining gets harder over 25
+          if (G.age >= 26) changeStat('reputation', -rand(3, 7));
+          var declinations = [
+            suitor.first + ' receives the refusal with more grace than you perhaps expected. He bows and withdraws.',
+            'You decline as kindly as you can. ' + suitor.first + ' is stoic about it. You believe he genuinely is.',
+            suitor.first + ' nods once. "I understand," he says. He does not say anything else. You respect him for it.',
+          ];
+          addFeedEntry('You decline ' + suitor.first + '\'s proposal.', 'event');
+          queuePopup(pick(declinations), G.age >= 26 ? 'Rep -5' : null);
+          // Mark in suitor pool
+          if (G.suitorPool) {
+            var entry = G.suitorPool.find(function(e){ return e.suitor && e.suitor.first === suitor.first; });
+            if (entry) entry.declined = true;
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+    ]
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// AUTONOMOUS PREGNANCY
+// ═══════════════════════════════════════════════════════════
+
+function fireAutonomousPregnancy() {
+  if (!G.isMarried || G.pregnancy) return;
+
+  if (typeof initPregnancy === 'function') initPregnancy();
+
+  var multiples = G.pregnancy && G.pregnancy.triplets ? 'triplets'
+                : G.pregnancy && G.pregnancy.twins    ? 'twins'
+                : null;
+
+  var openings = [
+    'The doctor confirms what you had already begun to suspect. You are with child.',
+    'You know before the doctor tells you. Still, it is good to have it confirmed.',
+    'The news comes in spring, as it often does. You are with child.',
+    'You tell your husband before you tell anyone else. His face is everything.',
+  ];
+
+  var multiplesNote = '';
+  if (multiples === 'twins') {
+    multiplesNote = '\n\nThe doctor pauses. He listens again. "I believe," he says carefully, "there may be two."';
+  } else if (multiples === 'triplets') {
+    multiplesNote = '\n\nThe doctor listens for a very long time. When he looks up his expression is difficult to read. "Three," he says. "I am almost certain."';
+  }
+
+  addFeedEntry('You are with child.', 'event');
+  queuePopup(
+    pick(openings) + multiplesNote,
+    multiples === 'triplets' ? '\u2605 Triplets!' : multiples === 'twins' ? '\u2605 Twins!' : 'With child',
+  );
+  renderStats(); saveGame();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// DYNASTY SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+// ── Dynasty overview ────────────────────────────────────────
+function openDynastyView() {
+  var dynastyName = G.dynastyName || (G.fatherBg ? G.fatherBg.surname : G.name.split(' ').pop()) || 'Your Family';
+  var children    = G.children || [];
+  var adopted     = children.filter(function(c){ return c.adopted; });
+  var bio         = children.filter(function(c){ return !c.adopted; });
+
+  var lines = ['The ' + dynastyName + ' Family\n'];
+
+  // Player
+  lines.push('You: ' + G.name + ', age ' + G.age);
+  if (G.isMarried && G.spouse) lines.push('Married to: ' + G.spouse.fullName);
+
+  // Children
+  if (children.length) {
+    lines.push('\nChildren (' + children.length + '):');
+    children.forEach(function(c) {
+      var status = c.isMarried ? 'Married' : c.age >= 18 ? 'Of age' : 'Age ' + c.age;
+      var adoptNote = c.adopted ? ' (adopted)' : '';
+      lines.push('  ' + c.name + ' \u2014 ' + (c.gender === 'son' ? 'Son' : 'Daughter') + adoptNote + ' \u00b7 ' + status);
+      if (c.isMarried && c.spouseName) lines.push('    Married to ' + c.spouseName);
+      if (c.children && c.children.length) lines.push('    Grandchildren: ' + c.children.map(function(g){ return g.name; }).join(', '));
+    });
+  } else {
+    lines.push('\nNo children.');
+  }
+
+  queuePopup(
+    lines.join('\n'),
+    'The ' + dynastyName + ' Dynasty',
+    [
+      { text: 'Arrange a child\'s marriage', fn() { openArrangeMarriageMenu(); return null; } },
+      { text: 'Adopt a child',               fn() { openAdoptionMenu();        return null; } },
+      ...( children.length === 0 && G.age >= 38 ? [{ text: 'Reflect on legacy', fn() { fireChildlessMoment(); return null; } }] : []),
+      { text: '\u2190 Back', fn() { return {}; } },
+    ]
+  );
+}
+
+// ── Arrange marriage for a specific child ───────────────────
+function openArrangeMarriage(child) {
+  if (!child) { openArrangeMarriageMenu(); return; }
+  if (child.isMarried) {
+    queuePopup(child.name + ' is already married.'); return;
+  }
+  if (child.age < 16) {
+    queuePopup(child.name + ' is far too young. This conversation should not be happening.'); return;
+  }
+
+  var isDaughter = child.gender === 'daughter';
+  var isSon      = child.gender === 'son';
+
+  // Generate 3 potential matches
+  var matches = [];
+  for (var i = 0; i < 3; i++) {
+    var w = isDaughter
+      ? (rand(1,10) >= 7 ? rand(2000,8000) : rand(400,2500))
+      : (rand(1,10) >= 7 ? rand(3000,12000) : rand(800,4000));
+    var titles = isDaughter
+      ? ['Mr','Mr','Mr','Captain','Major','The Honourable','Sir']
+      : ['Miss','Miss','Miss','Miss','Miss Honourable'];
+    var t = pick(titles);
+    var first = isDaughter ? pick(NAMES.male) : pick(NAMES.female);
+    var last  = pick(NAMES.surname);
+    matches.push({
+      name: t + ' ' + first + ' ' + last,
+      first: first, last: last,
+      wealth: w,
+      title: t,
+      rankLabel: w > 5000 ? 'Gentleman of fortune' : w > 1500 ? 'Gentleman' : 'Respectable family',
+      trait: pick(['kind','witty','reserved','earnest','proud','charming']),
+    });
+  }
+
+  queuePopup(
+    'Arrange a Match for ' + child.name + '\n\nAge ' + child.age + ' \u00b7 ' + (isDaughter ? 'Daughter' : 'Son') + '\n\nYou have ' + (isDaughter ? 'her' : 'his') + ' future to consider carefully.',
+    null,
+    [
+      ...matches.map(function(m) {
+        return {
+          text: m.name + ' \u2014 ' + m.rankLabel + ', \u00a3' + m.wealth.toLocaleString() + '/yr',
+          fn() {
+            openMatchNegotiation(child, m);
+            return null;
+          },
+        };
+      }),
+      { text: 'Leave it to ' + (isDaughter ? 'her' : 'him') + ' for now', fn() { return {}; } },
+    ]
+  );
+}
+
+function openArrangeMarriageMenu() {
+  var eligible = (G.children||[]).filter(function(c){ return !c.isMarried && c.age >= 16; });
+  if (!eligible.length) {
+    queuePopup('None of your children are yet of a marriageable age, or all are already settled.');
+    return;
+  }
+  queuePopup(
+    'Which child would you arrange a match for?',
+    null,
+    eligible.map(function(c) {
+      return {
+        text: c.name + ' \u2014 ' + (c.gender === 'son' ? 'Son' : 'Daughter') + ', age ' + c.age,
+        fn() { openArrangeMarriage(c); return null; },
+      };
+    }).concat([{ text: '\u2190 Back', fn() { return {}; } }])
+  );
+}
+
+function openMatchNegotiation(child, match) {
+  var isDaughter = child.gender === 'daughter';
+  var standScore = typeof standingScore === 'function' ? standingScore() : 50;
+
+  // Success chance based on child's traits, standing, and match quality
+  var childLooks  = child.looks  || 55;
+  var childWit    = child.wit    || 55;
+  var matchChance = 0.5
+    + (childLooks  - 50) * 0.004
+    + (childWit    - 50) * 0.003
+    + (standScore  - 50) * 0.005;
+  matchChance = Math.max(0.15, Math.min(0.90, matchChance));
+
+  // Calculate settlement player can offer for this child
+  var childSettlementBase = isDaughter
+    ? Math.floor((G.wealth||0) * 0.10)
+    : Math.floor((G.wealth||0) * 0.05);
+  childSettlementBase = Math.max(0, Math.min(childSettlementBase, (G.wealth||0)));
+  var settlementOffer = Math.round(childSettlementBase / 25) * 25;
+
+  var negotiationStyles = [
+    {
+      text: 'Make a formal approach through proper channels',
+      successMod: 0, failMod: 0,
+      successText: 'The approach is received well. A meeting is arranged. Within a season, matters are settled satisfactorily.',
+      failText: 'The family declines, politely but firmly. Their circumstances or expectations did not align with yours.',
+    },
+    {
+      text: settlementOffer > 0 ? 'Offer a settlement of \u00a3' + settlementOffer + ' on ' + child.name : 'Offer a settlement (no funds available)',
+      successMod: settlementOffer > 0 ? 0.20 : -0.10, failMod: 0,
+      cost: settlementOffer,
+      successText: 'The settlement secures the match. ' + child.name + ' enters the marriage with something of their own.',
+      failText: 'Even the settlement is insufficient for their expectations.',
+    },
+    {
+      text: 'Push hard \u2014 make it clear this is a dynasty alliance',
+      successMod: 0.10, failMod: -0.15,
+      successText: 'The forthright approach works in your favour. They respect clarity of purpose.',
+      failText: 'The pressure works against you. They find it presumptuous. The match is off.',
+    },
+    {
+      text: 'Negotiate a pin money provision for ' + child.name,
+      successMod: 0.12, failMod: -0.05, pinMoney: true,
+      successText: child.name + ' will have a guaranteed annual income within the marriage. You insisted on it.',
+      failText: 'They will not agree to a pin money provision. You find this tells you something about them.',
+    },
+  ];
+
+  queuePopup(
+    match.name + '\n' + match.rankLabel + ' \u00b7 \u00a3' + match.wealth.toLocaleString() + '/yr\n' + match.trait + '\n\nHow shall you approach this?',
+    null,
+    negotiationStyles.map(function(style) {
+      return {
+        text: style.text,
+        fn() {
+          var chance = matchChance + style.successMod;
+          if (style.cost && (G.wealth||0) >= style.cost) { G.wealth -= style.cost; child.settlement = style.cost; }
+          var roll = Math.random();
+          if (roll < chance) {
+            // Success
+            child.isMarried = true;
+            child.spouseName = match.name;
+            child.spouseWealth = match.wealth;
+            child.marriageArranged = true;
+            if (style.pinMoney) child.pinMoney = Math.max(10, Math.floor((match.wealth||500) * 0.05));
+            changeStat('reputation', rand(5,12));
+            if (isDaughter) changeStat('reputation', match.wealth > 3000 ? rand(8,15) : rand(3,8));
+            addFeedEntry(child.name + ' is to be married to ' + match.name + '.', 'event');
+            queuePopup(
+              style.successText + '\n\n' + child.name + ' and ' + match.name + ' are to be married. You did this.',
+              isDaughter && match.wealth > 4000 ? 'Excellent match!' : 'Match made'
+            );
+          } else {
+            // Failure
+            changeStat('reputation', style.failMod < 0 ? rand(3,6) * -1 : 0);
+            addFeedEntry('The proposed match for ' + child.name + ' did not succeed.', 'event');
+            queuePopup(style.failText, style.failMod < 0 ? 'Rep -4' : null);
+          }
+          renderStats(); saveGame(); return null;
+        },
+      };
+    }).concat([{ text: 'Reconsider', fn() { openArrangeMarriage(child); return null; } }])
+  );
+}
+
+
+// ── Adoption ────────────────────────────────────────────────
+function openAdoptionMenu() {
+  var hasRoom = !G.children || G.children.length < 6;
+  if (!hasRoom) {
+    queuePopup('Your household is already full. There is no room for another child at present.');
+    return;
+  }
+
+  // Generate 3 children to choose from
+  var children = [
+    generateAdoptionChild(),
+    generateAdoptionChild(),
+    generateAdoptionChild(),
+  ];
+
+  showAdoptionPicker(children);
+}
+
+// ── Adoption child generator ────────────────────────────────
+
+var ADOPTION_ORIGINS = [
+  { type:"parish",       text:"Found on the parish steps, wrapped in a servant's apron. No note. No name given." },
+  { type:"parish",       text:"The youngest of seven children of a labourer who cannot feed them all. He wept when he brought her." },
+  { type:"parish",       text:"Pulled from a workhouse by the vicar's intervention. She has not spoken since she arrived." },
+  { type:"orphan",       text:"Orphaned when her parents died of fever last winter. Her aunt cannot take her in." },
+  { type:"orphan",       text:"His father died at sea. His mother followed three months later. No explanation was ever given." },
+  { type:"orphan",       text:"Both parents lost in a house fire. He was carried out by a neighbour. The house was not." },
+  { type:"orphan",       text:"Her mother died in childbed. Her father remarried quickly. The new wife has made her situation plain." },
+  { type:"relation",     text:"Your distant cousin's child. The father has debts and a new wife and no room for a reminder of the first." },
+  { type:"relation",     text:"Your brother's wife's youngest. They have too many children and not enough income. They ask with great dignity." },
+  { type:"relation",     text:"A second cousin twice removed. The family connexion is thin but real. The need is not." },
+  { type:"baseborn",     text:"Born to a master's young housemaid who has since disappeared. The housekeeper brought the child here." },
+  { type:"baseborn",     text:"The natural child of a gentleman who will not acknowledge him. His mother has placed him with the parish." },
+  { type:"baseborn",     text:"Born under circumstances nobody will discuss plainly. She is healthy and she is here and she needs a home." },
+  { type:"foundling",    text:"Left at the church door during the midnight service. The curate found her at dawn." },
+  { type:"foundling",    text:"Discovered in a basket outside the apothecary. A small fortune in the basket with him — and then nothing." },
+  { type:"war",          text:"His father died at Waterloo. His mother could not manage alone and has gone into service." },
+  { type:"war",          text:"A soldier's daughter whose mother has remarried a man who does not want a reminder of the first husband." },
+  { type:"emigrant",     text:"Her family sailed for the colonies and could not take all the children. She was left with a neighbour." },
+  { type:"emigrant",     text:"Left behind when his parents emigrated. They sent one letter. Then nothing." },
+  { type:"illness",      text:"Her mother died of consumption. Her father followed. The neighbours did what they could." },
+  { type:"illness",      text:"Lost both parents to the fever that went through the village last autumn. He is the only survivor." },
+  { type:"relation",     text:"Your mother's cousin married badly. He died badly too. She is left with three children and no income." },
+  { type:"relation",     text:"Your father's youngest brother had a child before he married. Nobody speaks of it directly. The child exists regardless." },
+  { type:"relation",     text:"A niece by marriage — your husband's sister's youngest. The family cannot manage and will not ask, so you are asking on their behalf." },
+  { type:"relation",     text:"Your great-aunt's granddaughter. The connexion is distant but the blood is real, and there is nobody else." },
+  { type:"relation",     text:"The daughter of your father's old friend, now dead. He asked, years ago, that you look after his family if it came to it. It has come to it." },
+  { type:"baseborn",     text:"Rumoured to be the natural child of someone who moves in your circles. Nobody will confirm it. The child is quite unaware of any of this." },
+  { type:"war",          text:"His father fell in the Peninsula. His mother has remarried and her new husband has made clear the boy is not welcome." },
+  { type:"foundling",    text:"Found in the back pew of the church on a Wednesday, with a note that said only: please." },
+];
+
+var ADOPTION_FACE_GIRLS = [
+  '\u{1F467}', // girl
+  '\u{1F9D2}', // child (neutral)
+];
+var ADOPTION_FACE_BOYS = [
+  '\u{1F466}', // boy
+  '\u{1F9D2}', // child (neutral)
+];
+
+function generateAdoptionChild() {
+  var gender   = Math.random() < 0.5 ? 'daughter' : 'son';
+  var age      = rand(2, 12);
+  var origin   = pick(ADOPTION_ORIGINS);
+  var namePool = gender === 'daughter' ? NAMES.female : NAMES.male;
+  var name     = pick(namePool);
+  var face     = gender === 'daughter' ? pick(ADOPTION_FACE_GIRLS) : pick(ADOPTION_FACE_BOYS);
+
+  // Stats — generally lower than bio children, reflecting difficult starts
+  // But occasionally one is remarkably able
+  var health = rand(25, 75);
+  var wit    = rand(25, 80);
+  var looks  = rand(25, 75);
+
+  // Personality hint — one word, evocative
+  var personalities = ['watchful','gentle','fierce','quick','solemn','merry','guarded','curious','bold','quiet','proud','tender'];
+  var personality   = pick(personalities);
+
+  return {
+    gender:     gender,
+    name:       name,
+    age:        age,
+    health:     health,
+    wit:        wit,
+    looks:      looks,
+    face:       face,
+    origin:     origin,
+    personality:personality,
+    adopted:    true,
+    adoptType:  origin.type,
+    seeds:      { kind: 1 },
+    traits:     [],
+    closeness:  rand(15, 35), // built over time
+  };
+}
+
+// ── Adoption picker — card-based HTML popup ─────────────────
+
+function showAdoptionPicker(children) {
+  // Add more distant relative origins to the pool naturally
+  // Build card HTML — injected via queuePopup's statsHtml slot (after first <div)
+  var cardsHtml = '<div style="margin-top:8px">';
+  children.forEach(function(c, idx) {
+    var genderLabel = c.gender === 'daughter' ? 'Girl' : 'Boy';
+    var bar = function(label, val, col) {
+      var pct = Math.min(100, Math.max(0, val));
+      return '<div style="display:flex;align-items:center;gap:5px;margin:1px 0">'
+        + '<span style="font-size:9px;color:var(--sepia);font-variant:small-caps;width:38px;flex-shrink:0">' + label + '</span>'
+        + '<div style="flex:1;height:4px;background:rgba(255,255,255,.1);border-radius:2px">'
+        + '<div style="width:' + pct + '%;height:100%;background:' + col + ';border-radius:2px"></div>'
+        + '</div>'
+        + '<span style="font-size:9px;color:var(--sepia);width:20px;text-align:right">' + val + '</span>'
+        + '</div>';
+    };
+    cardsHtml +=
+      '<div class="adopt-card" data-idx="' + idx + '" style="'
+      + 'background:rgba(255,255,255,.04);border:1px solid rgba(180,134,11,.3);border-radius:8px;'
+      + 'padding:10px 12px;margin:0 0 8px;cursor:pointer;transition:background .15s;-webkit-tap-highlight-color:transparent">'
+      + '<div style="display:flex;align-items:flex-start;gap:10px">'
+      + '<span style="font-size:34px;line-height:1.1;flex-shrink:0">' + c.face + '</span>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">'
+      + '<span style="color:var(--glt);font-size:15px;font-variant:small-caps">' + c.name + '</span>'
+      + '<span style="color:var(--sepia);font-size:10px;white-space:nowrap">' + genderLabel + ' · ' + c.age + '</span>'
+      + '</div>'
+      + '<div style="color:var(--sepia);font-size:10px;font-style:italic;margin:2px 0 5px">' + c.personality + '</div>'
+      + bar('Health', c.health, '#8b2020')
+      + bar('Wit',    c.wit,    '#2d5016')
+      + bar('Looks',  c.looks,  '#7a4f2d')
+      + '</div></div>'
+      + '<div style="color:var(--parch);font-size:11px;font-style:italic;margin-top:7px;line-height:1.5;opacity:.85">'
+      + c.origin.text
+      + '</div>'
+      + '</div>';
+  });
+  cardsHtml += '</div>';
+
+  // Use queuePopup with HTML in text — nextPopup will render the <div> as statsHtml
+  var introText = 'Three children are brought to your attention.';
+  queuePopup(
+    introText + cardsHtml,
+    null,
+    [
+      { text: 'Not at this time', fn() {
+        queuePopup('You let the moment pass. The children will be cared for elsewhere. You think about it afterwards, more than you expected.');
+        return null;
+      }},
+    ]
+  );
+
+  // After popup opens, wire card click handlers
+  setTimeout(function() {
+    var cards = document.querySelectorAll('.adopt-card');
+    cards.forEach(function(card) {
+      var i = parseInt(card.dataset.idx);
+      var child = children[i];
+      card.addEventListener('click', function() {
+        closePopup();
+        setTimeout(function() { confirmAdoption(child); }, 250);
+      });
+      card.addEventListener('mouseenter', function() {
+        card.style.background = 'rgba(180,134,11,.12)';
+      });
+      card.addEventListener('mouseleave', function() {
+        card.style.background = 'rgba(255,255,255,.04)';
+      });
+    });
+  }, 80);
+}
+
+
+function confirmAdoption(child) {
+  queuePopup(
+    child.name + '.\n\n' + child.origin.text + '\n\nYou could change ' + (child.gender === 'daughter' ? 'her' : 'his') + ' life. You could also change yours.',
+    null,
+    [
+      {
+        text: 'Bring ' + child.name + ' home',
+        fn() {
+          if (!G.children) G.children = [];
+          G.children.push(child);
+
+          var faithGain = rand(5,10);
+          var repEffect = child.adoptType === 'baseborn' || child.adoptType === 'parish' ? rand(-3,3) : rand(2,6);
+          changeStat('faith', faithGain);
+          changeStat('reputation', repEffect);
+
+          addFeedEntry(child.name + ' joins your household.', 'event');
+          queuePopup(
+            child.name + ' arrives with almost nothing. '
+              + (child.age <= 4 ? 'So young. You hold ' + (child.gender === 'daughter' ? 'her' : 'him') + ' for a long time.'
+               : child.age <= 8 ? (child.gender === 'daughter' ? 'She' : 'He') + ' looks at everything very carefully before touching it. You understand that instinct.'
+               : (child.gender === 'daughter' ? 'She' : 'He') + ' shakes your hand when you greet ' + (child.gender === 'daughter' ? 'her' : 'him') + '. Very formal. Very brave.')
+              + ' This will take time. You have time.',
+            'Faith +' + faithGain + (repEffect > 0 ? '  Rep +' + repEffect : repEffect < 0 ? '  Rep ' + repEffect : '')
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Think about it a little longer',
+        fn() {
+          // Keep same children available for next visit
+          G._pendingAdoption = child;
+          queuePopup(
+            'You ask for a little time. ' + child.name + ' waits with the patience of someone who has learned to wait.',
+            null, null,
+            function() {
+              setTimeout(function() {
+                queuePopup(
+                  child.name + ' is still waiting. You said you needed time.',
+                  null,
+                  [
+                    { text: 'Bring ' + child.name + ' home', fn() { confirmAdoption(child); return null; } },
+                    { text: 'Let it go', fn() {
+                      G._pendingAdoption = null;
+                      queuePopup('You let it go. You do not entirely stop thinking about it.');
+                      return null;
+                    }},
+                  ]
+                );
+              }, 400);
+            }
+          );
+          return null;
+        },
+      },
+    ]
+  );
+}
+
+
+function fireChildlessMoment() {
+  var isOlderNow = G.age >= 45;
+
+  var scenarios = [
+    {
+      text: 'Your niece visits for a fortnight. She is fourteen and clever and exhausting and wonderful. When she leaves, the house is very quiet.',
+      choices: [
+        { text: 'Write to her mother about a longer visit', faith: rand(3,6), rep: rand(1,3), hint: 'Make her part of your life' },
+        { text: 'Sit with the quiet and let it be what it is', wit: rand(2,4), hint: 'There is dignity in acceptance' },
+        { text: 'Consider whether she might come to live with you', adopt: true, hint: 'Open the door' },
+      ],
+    },
+    {
+      text: 'You attend the christening of ' + (G.siblings && G.siblings.find(function(s){return s.alive;}) ? G.siblings.find(function(s){return s.alive;}).name + '\'s' : 'your cousin\'s') + ' third child. You hold the baby. The baby does not object.',
+      choices: [
+        { text: 'Offer to be godmother', faith: rand(4,8), rep: rand(2,5), hint: 'A role that matters' },
+        { text: 'Smile and say all the right things', hint: 'Sometimes that is enough' },
+        { text: 'Ask quietly about a poor relation who needs a home', adopt: true, hint: 'A different kind of family' },
+      ],
+    },
+    {
+      text: isOlderNow
+        ? 'You are forty-' + (G.age - 40) + '. The physician has not said anything directly. But his expression, last visit, said something. The door, it seems, is closing.'
+        : 'You think, not for the first time, about the nursery at the end of the hall. It has never been used. You do not know why you think about it as often as you do.',
+      choices: [
+        { text: 'Consider adoption', adopt: true, hint: 'Family is made, not only born' },
+        { text: 'Turn your energy toward your work and connexions', rep: rand(3,6), wit: rand(2,4), hint: 'A different kind of legacy' },
+        { text: 'Speak to your husband about it honestly', spouseClose: rand(5,12), hint: 'Some things need saying' },
+      ],
+    },
+  ];
+
+  var scenario = pick(scenarios);
+
+  addFeedEntry('You think about family and legacy.', 'event');
+
+  queuePopup(
+    scenario.text,
+    null,
+    scenario.choices.map(function(c) {
+      return {
+        text: c.hint ? c.text + ' \u2014 ' + c.hint : c.text,
+        fn() {
+          if (c.faith)       changeStat('faith', c.faith);
+          if (c.rep)         changeStat('reputation', c.rep);
+          if (c.wit)         changeStat('wit', c.wit);
+          if (c.spouseClose && G.spouse) G.spouse.closeness = Math.min(100, (G.spouse.closeness||60) + c.spouseClose);
+          if (c.adopt) {
+            setTimeout(function(){ openAdoptionMenu(); }, 400);
+          } else {
+            var responses = [
+              'You make your choice and carry it forward.',
+              'Some decisions settle something in you even if they change nothing outside.',
+              'You do not know if it was the right decision. You made it honestly.',
+            ];
+            queuePopup(pick(responses));
+          }
+          renderStats(); saveGame(); return null;
+        },
+      };
+    })
+  );
+}
+
+
+// ── Dynasty view entry point (add to People tab or Household) ──
+function openDynastyFromPeople() {
+  openDynastyView();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// FORTUNE HUNTER
+// A man after your settlement rather than yourself.
+// Potentially ruinous. Possibly romantic. Definitely chaos.
+// ═══════════════════════════════════════════════════════════
+
+function fireFortunehunter(data) {
+  var settlement = data.settlement || 0;
+
+  // Fortune hunters are charming, financially desperate, and often genuinely handsome
+  var hunterNames = [
+    { first:'Captain Ashford',  last:'Ashford',  title:'Captain', desc:'handsome in a reckless sort of way, with excellent posture and no visible income' },
+    { first:'Mr Pelham',        last:'Pelham',   title:'Mr',      desc:'charming to a degree that would be suspicious if you were not enjoying it so much' },
+    { first:'Lord Carwick',     last:'Carwick',  title:'Lord',    desc:'a lord in name, deeply in debt in practice, impossible to dislike in person' },
+    { first:'Major Sterne',     last:'Sterne',   title:'Major',   desc:'a war hero, allegedly. The stories change slightly each time you hear them' },
+    { first:'Mr Colville',      last:'Colville', title:'Mr',      desc:'well-dressed beyond his evident means and very attentive to what he is told you will receive' },
+    { first:'Sir Jasper Oates',  last:'Oates',   title:'Sir',     desc:'a baronet of three months\' standing, a gaming debt of three years\' standing' },
+  ];
+
+  var hunter = pick(hunterNames);
+
+  // How he makes his approach — several flavours
+  var approaches = [
+    'He appears at three consecutive events and manages to be introduced at all of them. He is persistent in a way that is difficult to object to directly.',
+    'He flatters you in a manner so well-calibrated to your exact sensibilities that you wonder, briefly, if he has done research.',
+    'He tells you that your intelligence is remarkable. Your eyes are remarkable. Your conversation is remarkable. At some point you realise he has not once mentioned your fortune, which means he has thought about it very carefully.',
+    'He is introduced through a mutual friend. He is everything the friend said. The friend, you later realise, was paid.',
+    'He contrives to be helpful at precisely the right moments. The umbrella when it rained. The lost glove found. You begin to find the coincidences suspicious.',
+  ];
+
+  addFeedEntry(hunter.title + ' ' + hunter.last + ' shows a marked interest in you.', 'event');
+
+  queuePopup(
+    hunter.title + ' ' + hunter.last + '.\n\n'
+      + hunter.title + ' ' + hunter.last + ' is ' + hunter.desc + '.\n\n'
+      + pick(approaches) + '\n\n'
+      + 'Your settlement is ' + (settlement >= 500 ? 'known to be substantial' : 'known') + '. There are those who say he knows exactly how much.',
+    'A charming stranger',
+    [
+      {
+        text: 'Encourage him — he is very charming',
+        fn() {
+          // Risky — if you marry him it could go badly
+          G._fortuneHunterSuitor = hunter;
+          changeStat('reputation', rand(2,5));
+          G.fashion = Math.min(100, (G.fashion||0) + rand(2,4)); // being pursued raises your profile
+          addFeedEntry('You encourage ' + hunter.title + ' ' + hunter.last + '.', 'event');
+          queuePopup(
+            'You let him know his attentions are not unwelcome. He is very pleased. His attentions intensify. You are not sure whether this is thrilling or alarming. Possibly both.',
+            'Rep +3  Fortune hunter encouraged',
+            null,
+            function() {
+              // Queue a follow-up next season — proposal or exposure
+              if (!G._fortuneHunterFollowUp) G._fortuneHunterFollowUp = hunter;
+            }
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Investigate quietly before deciding',
+        fn() {
+          // Wit check — find out the truth
+          var witScore = G.wit || 50;
+          var discovered = Math.random() < (0.30 + (witScore - 50) * 0.006);
+          if (discovered) {
+            changeStat('wit', rand(2,4));
+            addFeedEntry('You discover ' + hunter.title + ' ' + hunter.last + ' is after your settlement.', 'event');
+            queuePopup(
+              'You ask a few careful questions of a few careful people. The answer comes back quickly.\n\n'
+                + hunter.title + ' ' + hunter.last + ' has debts of approximately \u00a3' + rand(200,800).toLocaleString() + '. '
+                + 'He is known in certain circles. The circles overlap, unfortunately, with yours.\n\n'
+                + 'He is pursuing your settlement, not yourself. The distinction matters to you.',
+              'Wit +3  Fortune hunter exposed',
+              [
+                { text: 'Dismiss him entirely', fn() {
+                  changeStat('reputation', rand(2,5));
+                  G._fortuneHunterSuitor = null;
+                  queuePopup(
+                    'You withdraw your attentions so smoothly that he cannot object to the manner of it, only the fact. He departs. You feel, against all reason, a small pang. He was very charming.',
+                    'Rep +3'
+                  );
+                  renderStats(); saveGame(); return null;
+                }},
+                { text: 'Encourage him anyway — you are not naive, just willing', fn() {
+                  G._fortuneHunterSuitor = hunter;
+                  G._fortuneHunterKnown = true; // player knows but proceeds
+                  queuePopup(
+                    'You know what he is. You let him continue anyway. This is either very sophisticated or very unwise. You are not certain which. He is extremely handsome.',
+                    'Eyes open'
+                  );
+                  saveGame(); return null;
+                }},
+              ]
+            );
+          } else {
+            changeStat('wit', rand(1,2));
+            queuePopup(
+              'You ask around discreetly. Nothing definitive emerges. He may be exactly what he appears. Or the information has not reached you yet.',
+              'Wit +1  Inconclusive'
+            );
+          }
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Rebuff him immediately',
+        fn() {
+          changeStat('reputation', rand(1,3));
+          addFeedEntry('You rebuff ' + hunter.title + ' ' + hunter.last + '.', 'event');
+          var rebuffs = [
+            'You are polite but entirely clear. He withdraws gracefully. You wonder if you were right.',
+            'You tell him, in so many words, that you are not interested. He looks surprised. Men like this are usually surprised.',
+            'You remove yourself from his vicinity with such elegant finality that he cannot follow without making a scene. He does not make a scene. You almost wish he had.',
+          ];
+          queuePopup(pick(rebuffs), 'Rep +2');
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Do nothing — watch and see what he does next',
+        fn() {
+          G._fortuneHunterSuitor = hunter;
+          addFeedEntry(hunter.title + ' ' + hunter.last + ' continues his attentions.', 'event');
+          queuePopup(
+            'You neither encourage nor discourage him. He takes this as encouragement. You are not surprised.',
+            null,
+            null,
+            function() {
+              if (!G._fortuneHunterFollowUp) G._fortuneHunterFollowUp = hunter;
+            }
+          );
+          saveGame(); return null;
+        },
+      },
+    ]
+  );
+}
+
+// Fortune hunter follow-up — fires next season if player encouraged/waited
+function checkFortuneHunterFollowUp() {
+  if (!G._fortuneHunterFollowUp) return;
+  var hunter = G._fortuneHunterFollowUp;
+  G._fortuneHunterFollowUp = null;
+  var knowingly = G._fortuneHunterKnown;
+
+  // He proposes — player must decide with full awareness
+  var debtAmount = rand(300, 1200);
+
+  // Fortune hunter compatibility
+  var fhCompat = G._fortuneHunterSuitor && G._fortuneHunterSuitor.compatibility !== undefined
+    ? G._fortuneHunterSuitor.compatibility
+    : (typeof calculateCompatibility === 'function' ? calculateCompatibility({ trait: 'charming', wit: 60, faith: 45, courtshipStyle: { id:'charming' }, _fortuneHunter: true }) : 35);
+  var fhCompatLine = typeof compatibilityLine === 'function' ? compatibilityLine(fhCompat, 'charming') : '';
+
+  queuePopup(
+    hunter.title + ' ' + hunter.last + ' proposes.\n\n'
+      + (knowingly
+        ? 'You know what he is. He knows you know. There is a certain clarity to this conversation that most proposals lack.'
+        : 'He is very convincing. The speech is excellent. You find yourself wondering if the feeling is real after all.')
+      + '\n\n' + (fhCompatLine ? fhCompatLine + '\n\n' : '') + 'His debts are, by best estimate, \u00a3' + debtAmount.toLocaleString() + '. Your settlement is \u00a3' + (G.expectedSettlement || 0).toLocaleString() + '. The mathematics are straightforward.',
+    'Proposal',
+    [
+      {
+        text: 'Accept — you know what this is and choose it anyway',
+        fn() {
+          // High-risk marriage — he may improve or may be ruinous
+          var suitor = {
+            first: hunter.first.split(' ').pop(),
+            last: hunter.last,
+            fullName: hunter.title + ' ' + hunter.last,
+            rankLabel: hunter.title === 'Lord' ? 'Peer' : hunter.title === 'Captain' || hunter.title === 'Major' ? 'Officer' : 'Gentleman',
+            wealth: rand(200, 800), // deliberately modest
+            titleRank: hunter.title === 'Lord' ? 2 : hunter.title === 'Sir' ? 1 : 0,
+            trait: pick(['charming','ambitious','sardonic','witty']),
+            desc: hunter.desc,
+            courtshipStyle: { label:'Charming', flirtBonus: 2, danceBonus: 1 },
+            _fortuneHunter: true,
+            _debt: debtAmount,
+          };
+          if (typeof startWeddingPlanning === 'function') {
+            startWeddingPlanning(suitor);
+          } else if (typeof acceptProposal === 'function') {
+            acceptProposal(suitor);
+          }
+          G._fortuneHunterSuitor = null;
+          G._fortuneHunterKnown  = false;
+          return null;
+        },
+      },
+      {
+        text: 'Refuse — you will not be a solution to someone else\'s debts',
+        fn() {
+          changeStat('reputation', rand(3,7));
+          G._fortuneHunterSuitor = null;
+          G._fortuneHunterKnown  = false;
+          addFeedEntry('You refuse ' + hunter.title + ' ' + hunter.last + '.', 'event');
+          queuePopup(
+            'You tell him no. Clearly. He is, to his credit, not ugly about it.\n\n'
+              + '"You are too clever," he says as he leaves. You are not entirely sure if this is a compliment.',
+            'Rep +4'
+          );
+          renderStats(); saveGame(); return null;
+        },
+      },
+      {
+        text: 'Ask for time — you still are not sure',
+        fn() {
+          G._fortuneHunterFollowUp = hunter; // keep him waiting one more season
+          queuePopup(
+            'He says he will wait. He means it, which is either reassuring or alarming depending on how you look at it.',
+          );
+          saveGame(); return null;
+        },
+      },
     ]
   );
 }

@@ -182,9 +182,10 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
 .sh-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
 .sh-name { font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; color:var(--glt); font-size:18px; letter-spacing:1px; }
 .sh-meta { color:var(--sepia); font-style:italic; font-size:11px; }
-.bars { display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }
+.bars { display:flex; flex-direction:column; gap:3px; }
+.stat-bars { flex-shrink:0; background:var(--ink); border-top:1px solid rgba(180,134,11,.2); padding:6px 13px 7px; }
 .sb { display:flex; align-items:center; gap:5px; }
-.sb-l { color:var(--sepia); font-size:9px; letter-spacing:1px; font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; width:44px; flex-shrink:0; }
+.sb-l { color:var(--sepia); font-size:9px; letter-spacing:1px; font-family:'Palatino Linotype','Book Antiqua',Palatino,'Noto Serif',Georgia,serif;font-variant:small-caps; width:48px; flex-shrink:0; }
 .sb-t { flex:1; height:4px; background:rgba(255,255,255,.1); border-radius:2px; overflow:hidden; }
 .sb-f { height:100%; border-radius:2px; transition:width .5s; }
 .sb-n { color:var(--sepia); font-size:9px; width:20px; text-align:right; flex-shrink:0; }
@@ -680,6 +681,7 @@ html,body { height:100%; background:var(--ink); font-family:'Palatino Linotype',
     </button>
   </div>
   <nav class="bnav" id="bnav"></nav>
+  <div class="stat-bars" id="stat-bars"></div>
 </div>
 
 <!-- POPUP -->

@@ -500,25 +500,56 @@ function unlockCareers(careerIds) {
 
 function calculateEligibility() {
   if (!G.eduStats) return 0;
-  const e = G.eduStats;
-  const elig = Math.round(
-    (e.decorum.total  * 0.35) +
-    (e.literacy.total * 0.20) +
-    (e.reason.total   * 0.15) +
-    (e.faith.total    * 0.10) +
-    (G.looks          * 0.10) +
-    (G.reputation     * 0.10)
+  var e = G.eduStats;
+
+  // Education components
+  var eduScore = (
+    (e.decorum.total  * 0.30) +
+    (e.literacy.total * 0.15) +
+    (e.reason.total   * 0.10) +
+    (e.faith.total    * 0.10)
   );
+
+  // Personal presentation
+  var looks   = G.looks   || 50;
+  var fashion = G.fashion || 0;
+  var presentScore = (looks * 0.10) + (fashion * 0.15);
+
+  // Reputation — minor contribution
+  var repScore = ((G.reputation || 50) * 0.05);
+
+  // Wealth & assets — modest but real contribution
+  var wealth = G.isMarried ? (G.spouse ? G.spouse.wealth : 0) : (G.income || 0);
+  if (G.assets) G.assets.forEach(function(a) { wealth += (a.baseIncome||0)*2; });
+  var wealthScore = wealth >= 5000 ? 8 : wealth >= 2000 ? 5 : wealth >= 500 ? 3 : wealth >= 100 ? 1 : 0;
+
+  // Settlement / expected dowry — a significant factor for unmarried women
+  // A good settlement makes a woman considerably more attractive on the marriage market
+  var settlement = G.expectedSettlement || 0;
+  // Also count anything already inherited (G.wealth if above a threshold)
+  if (!G.isMarried && (G.wealth||0) > 100) settlement = Math.max(settlement, G.wealth);
+  var settlementScore = settlement >= 1000 ? 12
+                      : settlement >= 500  ? 9
+                      : settlement >= 250  ? 6
+                      : settlement >= 100  ? 4
+                      : settlement >= 50   ? 2
+                      : 0;
+
+  // Connections — quality friends in society
+  var connections = (G.npcs||[]).filter(function(n){ return n.introduced && n.closeness >= 50; }).length;
+  var connScore = Math.min(5, connections);  // up to +5
+
+  var elig = Math.round(eduScore + presentScore + repScore + wealthScore + settlementScore + connScore);
   G.eligibility = clamp(elig, 0, 100);
   return G.eligibility;
 }
 
 function eligibilityLabel(e) {
-  if (e >= 85) return 'Diamond';
-  if (e >= 70) return 'Accomplished';
-  if (e >= 55) return 'Eligible';
-  if (e >= 40) return 'Modest';
-  if (e >= 25) return 'Limited';
+  if (e >= 85) return 'A Diamond';
+  if (e >= 70) return 'Highly Accomplished';
+  if (e >= 55) return 'A Good Match';
+  if (e >= 40) return 'Eligible';
+  if (e >= 25) return 'Modest Prospects';
   return 'Unremarkable';
 }
 

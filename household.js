@@ -506,13 +506,23 @@ function householdSeasonalUpdate() {
     }
   }
 
-  // ── 6. HUSBAND APPROVAL — OVERALL MANAGEMENT ─────────────
+  // ── 6. HUSBAND APPROVAL — MANAGEMENT + COMPATIBILITY ──────
   var mgmt = h.management ? h.management.total : 50;
+  var compat = G.spouse ? (G.spouse.compatibility || 50) : 50;
   if (G.spouse) {
+    // High compatibility means approval drifts up more easily, down less harshly
+    var compatMod = compat >= 70 ? 1 : compat >= 50 ? 0 : -1;
     if (mgmt >= 70) {
-      G.spouse.approval = clamp((G.spouse.approval||60)+rand(1,3), 0, 100);
+      G.spouse.approval = clamp((G.spouse.approval||60) + rand(1,3) + (compat >= 65 ? 1 : 0), 0, 100);
     } else if (mgmt < 35) {
-      G.spouse.approval = clamp((G.spouse.approval||60)-rand(1,3), 0, 100);
+      G.spouse.approval = clamp((G.spouse.approval||60) - rand(1,3) + (compat >= 65 ? 1 : 0), 0, 100);
+    } else {
+      // Neutral management — compatibility slowly shifts approval
+      if (compat >= 75 && Math.random() < 0.3) {
+        G.spouse.approval = clamp((G.spouse.approval||60) + 1, 0, 100);
+      } else if (compat < 30 && Math.random() < 0.2) {
+        G.spouse.approval = clamp((G.spouse.approval||60) - 1, 0, 100);
+      }
     }
   }
 

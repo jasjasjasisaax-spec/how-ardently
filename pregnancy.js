@@ -255,14 +255,18 @@ function pregnancySeasonEvents() {
 }
 
 function complicationChance() {
-  let chance = 0.15;
+  var chance = 0.15;
   if (G.health < 40)  chance += 0.15;
   if (G.health < 25)  chance += 0.15;
   if (G.age > 35)     chance += 0.10;
   if (G.age > 40)     chance += 0.15;
   if (G.pregnancy && G.pregnancy.twins)    chance += 0.15;
   if (G.pregnancy && G.pregnancy.triplets) chance += 0.30;
-  return Math.min(chance, 0.80);
+  // Low fertility correlates with complicated pregnancies
+  var fertility = G.fertility !== undefined ? G.fertility : 65;
+  if (fertility < 25) chance += 0.20;
+  else if (fertility < 40) chance += 0.10;
+  return Math.min(chance, 0.85);
 }
 
 // ── BIRTH RESOLUTION ──────────────────────────────────────
@@ -277,11 +281,13 @@ function resolveBirth() {
   const count      = isTriplets ? 3 : isTwins ? 2 : 1;
 
   // Mother survival
+  // Low fertility raises birth risk slightly
+  var fertilityMod = G.fertility !== undefined && G.fertility < 30 ? 1.3 : 1.0;
   const safeThreshold = G.health >= 70 ? 0.05
                       : G.health >= 50 ? 0.12
                       : G.health >= 30 ? 0.22
                       : 0.38;
-  const motherDied = Math.random() < safeThreshold * (isTriplets ? 2 : isTwins ? 1.5 : 1);
+  const motherDied = Math.random() < safeThreshold * fertilityMod * (isTriplets ? 2 : isTwins ? 1.5 : 1);
 
   // Each child's survival
   const babies = [];
@@ -295,6 +301,16 @@ function resolveBirth() {
   const complications = p.complications;
   G.pregnancy = null; // clear pregnancy state
   saveGame();
+
+  // Fertility impact from birth
+  if (G.fertility !== undefined) {
+    var fertDmg = motherDied      ? rand(25, 45)
+                : complications   ? rand(10, 22)
+                : isTriplets      ? rand(8,  15)
+                : isTwins         ? rand(4,  10)
+                :                   rand(0,  3);
+    G.fertility = Math.max(0, G.fertility - fertDmg);
+  }
 
   return { babies, motherDied, complications, isTwins, isTriplets, count };
 }

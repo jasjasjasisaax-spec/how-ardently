@@ -257,6 +257,11 @@ const ACTIONS = {
     // Lady's maid gives a presentation bonus
     var presentationBonus = hasLadysMaid && lmQuality >= 70 ? rand(2,4) : hasLadysMaid ? 1 : 0;
     if (presentationBonus > 0) changeStat('looks', presentationBonus);
+    // Attending a ball in Season builds fashion awareness
+    if (G.fashion !== undefined) {
+      var fashionGain = rand(2, 5);
+      G.fashion = Math.min(100, (G.fashion||0) + fashionGain);
+    }
 
     var r = rand(1, 10);
     // Arrival penalty nudges toward bad outcome
@@ -296,6 +301,11 @@ const ACTIONS = {
     var hasHorse    = G.assets && G.assets.some(function(a){ return a.type === 'horse'; });
     var parkBonus   = hasCarriage ? rand(2,4) : hasHorse ? rand(1,2) : 0;
     if (parkBonus > 0) changeStat('reputation', parkBonus);
+    // Hyde Park in spring — seeing and being seen builds fashion
+    if (G.fashion !== undefined) {
+      var parkFashion = hasCarriage ? rand(2,4) : rand(1,2);
+      G.fashion = Math.min(100, (G.fashion||0) + parkFashion);
+    }
     // Chance to encounter eligible person in Hyde Park (Spring only)
     if (!G.isMarried && G.age >= 16 && G.season === 'Spring' && Math.random() < 0.20) {
       setTimeout(() => {
@@ -370,30 +380,131 @@ const ACTIONS = {
   },
 
   country() {
-    const g = rand(6, 12); changeStat('health', g);
-    const m = pick([
-      'The countryside is golden and quiet. You rest properly for the first time in months.',
-      'Long walks, early mornings, and no one requiring anything of you. Restorative.',
-      'The harvest is beautiful this year. You read three novels. Excellent.',
-      'Autumn in the country. The air is cold and clean and entirely without obligation.',
-    ]);
+    // Legacy — redirect to country_walk
+    return ACTIONS.country_walk();
+  },
+
+  country_walk() {
+    var g = rand(5, 12); changeStat('health', g);
+    var hasHorse = G.assets && G.assets.some(function(a){ return a.type === 'horse'; });
+    // Darcy reference — fine eyes improved by walking
+    var looksBonus = rand(1, 3);
+    changeStat('looks', looksBonus);
+    // Chance encounter while walking (Autumn)
+    if (!G.isMarried && G.age >= 16 && Math.random() < 0.15) {
+      setTimeout(function() {
+        if (typeof generateSuitors !== 'function') return;
+        var walker = generateSuitors(1)[0];
+        if (!walker) return;
+        addFeedEntry('You encounter someone on your walk.', 'event');
+        queuePopup(
+          'On your walk you encounter ' + walker.fullName + '. He appears to have been riding. You are both slightly windswept. The conversation that follows is unexpectedly good.',
+          null,
+          [
+            { text: 'Encourage the acquaintance', fn() { if(typeof addToSuitorPool==='function') addToSuitorPool(walker,'walk'); beginCourtship && beginCourtship(walker); return null; } },
+            { text: 'A pleasant coincidence only', fn() { if(typeof addToSuitorPool==='function') addToSuitorPool(walker,'walk'); saveGame(); return {}; } },
+          ]
+        );
+      }, 600);
+    }
+    var msgs = [
+      'The countryside is golden and your mind is quieter than it has been for months.',
+      'A long walk across the fields. The cold air is invigorating. You feel entirely yourself.',
+      'Three miles before breakfast. Your cheeks are pink and your eyes are bright. A neighbour remarks on it.',
+      'The harvest fields are extraordinary this year. You walk until your legs ache and your mind is clear.',
+      'An unexpectedly pleasant morning. The exercise does what no medicine could.',
+    ];
+    var m = pick(msgs) + (hasHorse ? ' You ride part of the way and the countryside opens up beautifully.' : '');
+
+    // Random walk event (25% chance)
+    var walkEvents = [
+      { chance: 0.25, fn() {
+        // Stumble on something interesting
+        var discoveries = [
+          { text: 'You find a gap in the hedgerow that opens onto a view you have never seen before. You stand there for twenty minutes.', health: rand(2,4), wit: rand(1,3) },
+          { text: 'You discover a ruined folly at the edge of the estate you never knew existed. It is overgrown and somewhat gothic. You are delighted.', wit: rand(2,5) },
+          { text: 'You encounter a shepherd who has been working this land for forty years. He tells you the names of every field. You write them down when you get home.', wit: rand(2,4), faith: rand(1,2) },
+          { text: 'It rains suddenly and thoroughly. You shelter under an oak that turns out to be inadequate. You arrive home soaked. You feel wonderful.', health: rand(3,6) },
+          { text: 'You find a family of foxes sunning themselves in a clearing. They regard you with great calm. You stand very still for several minutes.', health: rand(2,4) },
+        ];
+        var d = pick(discoveries);
+        if (d.wit) changeStat('wit', d.wit);
+        if (d.faith) changeStat('faith', d.faith);
+        return d;
+      }},
+    ];
+    var chosenEvent = null;
+    for (var i = 0; i < walkEvents.length; i++) {
+      if (Math.random() < walkEvents[i].chance) { chosenEvent = walkEvents[i].fn(); break; }
+    }
+    var finalText = m;
+    var finalBadge = 'Health +' + g + (looksBonus ? '  Looks +' + looksBonus : '');
+    if (chosenEvent) {
+      finalText += '\n\n' + chosenEvent.text;
+      if (chosenEvent.wit) finalBadge += '  Wit +' + chosenEvent.wit;
+    }
     return {
-      log:   { text: m, type: 'good' },
-      popup: { text: m, badge: 'Health +' + g },
+      log:   { text: 'A walk in the countryside.', type: 'good' },
+      popup: { text: finalText, badge: finalBadge },
     };
   },
 
   visit() {
-    const g = rand(1, 4); changeStat('reputation', g);
-    const m = pick([
-      'You pay a morning call on the neighbours.',
-      'An afternoon of local calls — tea, gossip, careful observation.',
+    // Visit neighbours — proper version is openVisitNeighbours() in ui.js
+    // This handles the simple case (no known NPCs)
+    var g = rand(1, 4); changeStat('reputation', g);
+    var m = pick([
+      'You pay a morning call on the neighbours. Tea is taken. Opinions are exchanged.',
+      'An afternoon of local calls. The gossip is considerable and the cake is excellent.',
       'You call on three households and leave a good impression at all of them.',
+      'A pleasant round of morning visits. You are better liked than you perhaps realised.',
     ]);
     return {
       log:   { text: m, type: 'good' },
       popup: { text: m, badge: 'Reputation +' + g },
     };
+  },
+
+  tend_sick() {
+    // Visit sick villagers — faith, health effect, possible reputation
+    var faithBonus = rand(2, 6);
+    var healCost   = rand(0, 3); // exertion costs
+    changeStat('faith', faithBonus);
+    changeStat('health', -healCost);
+    changeStat('reputation', rand(1, 3));
+    var msgs = [
+      'You spend the morning at several cottages. The sick are grateful. The smell is considerable. You leave feeling morally excellent.',
+      'Old Mrs — in the village has been ill for a fortnight. You bring broth and sit with her. She tells you about 1798. It is quite a story.',
+      'Three children with the fever. You send for the apothecary and sit with the family until evening. The father thanks you twice.',
+      'The cottages near the farm need visiting. You go. The people are proud and poor. You are careful to be neither pitying nor distant.',
+      'You visit the bedridden. It is sobering and necessary and you feel better for having done it.',
+    ];
+    // Random notable event (35% chance)
+    var sickEvents = [
+      { text: 'One of the children recovers faster than expected. The mother credits your visits. You suspect it was the broth more than anything, but you are glad either way.', faith: rand(2,4) },
+      { text: 'An elderly man asks if you can write a letter for him to his son in London. You sit with him for an hour and write it carefully. He thanks you in a way that stays with you.', wit: rand(1,3), faith: rand(2,5) },
+      { text: 'You find a young woman who is ill and also clearly frightened of something. She will not say what. You leave your card and tell her to send if she needs you. She does, three days later.', faith: rand(3,6) },
+      { text: 'The apothecary is away. You do what you can with the knowledge you have, which is more than you expected.', wit: rand(2,4) },
+      { text: 'A cottage you had not visited before. The poverty inside is more severe than you knew. You go home and send a basket the same afternoon.', faith: rand(4,7), text2: 'You resolve to send provisions.' },
+    ];
+    var sickEvent = null;
+    if (Math.random() < 0.35) sickEvent = pick(sickEvents);
+    if (sickEvent) {
+      if (sickEvent.faith) changeStat('faith', sickEvent.faith);
+      if (sickEvent.wit)   changeStat('wit', sickEvent.wit);
+    }
+    var sickText = pick(msgs) + (sickEvent ? '\n\n' + sickEvent.text : '');
+    var sickBadge = 'Faith +' + faithBonus + (sickEvent && sickEvent.faith ? '+' + sickEvent.faith : '');
+    return {
+      log:   { text: 'You visit the sick in the village.', type: 'good' },
+      popup: { text: sickText, badge: sickBadge },
+    };
+  },
+
+  village_fete() {
+    // Opens the full fete experience in ui.js
+    if (typeof openVillageFete === 'function') { openVillageFete(); return null; }
+    return { log: { text: 'You attend the village fete.', type: 'good' }, popup: { text: 'The fete is lively.' } };
   },
 
   letters() {
@@ -542,6 +653,142 @@ const ACTIONS = {
 
   // mart and children are handled separately in ui.js
   // because they require multi-step flows
+
+  needlework() {
+    // Quiet domestic virtue — decorum, faith, occasional gift opportunity
+    var decorumGain = rand(1,3);
+    var faithGain   = rand(0,2);
+    if (typeof G.eduStats !== 'undefined' && G.eduStats && G.eduStats.decorum) {
+      G.eduStats.decorum.needlework = Math.min(100, (G.eduStats.decorum.needlework||0) + decorumGain);
+      if (typeof recalcEduTotals === 'function') recalcEduTotals();
+    }
+    changeStat('faith', faithGain);
+    // 20% chance to complete something giftable
+    var completed = Math.random() < 0.2;
+    var msgs = [
+      'Two hours at your embroidery frame. The work is finer than you expected. You feel pleasantly industrious.',
+      'A morning of needlework. The stitches are small and regular and the mind wanders productively.',
+      'You finish the border on a handkerchief you have been working since February. Small victories.',
+      'Needlework is underrated as a thinking activity. You solve three problems you did not know you had.',
+      'Your Berlin wool-work is coming along well. The parrot looks almost like a parrot.',
+    ];
+    var popupText = pick(msgs);
+    var badge = 'Decorum +' + decorumGain;
+    if (completed) {
+      popupText += '\n\nYou complete a small piece. It would make a pleasing gift.';
+      badge += ' \u00b7 Piece completed';
+      // Give option to gift later — for now just flag it
+      if (!G.completedNeedlework) G.completedNeedlework = 0;
+      G.completedNeedlework++;
+    }
+    return {
+      log:   { text: 'A morning of needlework.', type: 'good' },
+      popup: { text: popupText, badge: badge },
+    };
+  },
+
+  lawn_games() {
+    var healthGain = rand(3,8);
+    var looksGain  = rand(1,3);
+    changeStat('health', healthGain);
+    changeStat('looks',  looksGain);
+    // If it's Spring and there are guests/NPCs, chance of social encounter
+    var hasCompany = G.npcs && G.npcs.filter(function(n){ return n.introduced; }).length > 0;
+    var socialBonus = 0;
+    var socialNote = '';
+    if (hasCompany && Math.random() < 0.35) {
+      var friend = pick(G.npcs.filter(function(n){ return n.introduced && !n.isRival; }));
+      if (friend) {
+        socialBonus = rand(3,8);
+        if (typeof changeCloseness === 'function') changeCloseness(friend, socialBonus);
+        socialNote = ' ' + friend.nick + ' joins you for a round of pall-mall. She is surprisingly competitive.';
+      }
+    }
+    var msgs = [
+      'A vigorous game of pall-mall. The croquet mallet is heavier than it looks. You win.',
+      'Archery on the lawn. Your aim improves considerably when nobody is watching.',
+      'Battledore and shuttlecock. Undignified, vigorous, and excellent for the constitution.',
+      'A morning of lawn games. The fresh air is exactly what was needed.',
+    ];
+    return {
+      log:   { text: 'Lawn games.', type: 'good' },
+      popup: { text: pick(msgs) + socialNote, badge: 'Health +' + healthGain + '  Looks +' + looksGain },
+    };
+  },
+
+  riding() {
+    var hasHorse = G.assets && G.assets.some(function(a){ return a.type === 'horse'; });
+    if (!hasHorse) {
+      return { popup: { text: 'You do not have a horse. Perhaps visit the modiste’s catalogue, or a horse dealer.' } };
+    }
+    var horse = G.assets.find(function(a){ return a.type === 'horse'; });
+    var healthGain = rand(4,10);
+    var looksGain  = rand(2,4);
+    changeStat('health', healthGain);
+    changeStat('looks', looksGain);
+    // Fashion gains from being seen on horseback in spring
+    if (G.fashion !== undefined && G.season === 'Spring') {
+      G.fashion = Math.min(100, (G.fashion||0) + rand(1,3));
+    }
+    // Small chance of accident — rises with horse quality (thoroughbreds are skittish)
+    var accidentChance = horse.id === 'thoroughbred' ? 0.12 : horse.id === 'hunter' ? 0.06 : 0.03;
+    if (Math.random() < accidentChance) {
+      var injuryDmg = rand(5,15);
+      changeStat('health', -injuryDmg);
+      return {
+        log:   { text: horse.name + ' throws you. You are unhurt enough to be embarrassed.', type: 'bad' },
+        popup: { text: horse.name + ' shies at something entirely invisible and deposits you on the grass. You are not seriously hurt, mostly in your dignity. A groom witnesses everything.', badge: 'Health -' + injuryDmg },
+      };
+    }
+    var msgs = [
+      'An excellent ride. ' + horse.name + ' is in fine form and so are you.',
+      'You ride out before anyone else is awake. The countryside is yours entirely.',
+      'Two hours on horseback. You return with pink cheeks and considerably improved spirits.',
+      'A fine morning’s ride. The exercise does exactly what it is supposed to do.',
+    ];
+    return {
+      log:   { text: 'You ride out on ' + horse.name + '.', type: 'good' },
+      popup: { text: pick(msgs), badge: 'Health +' + healthGain + '  Looks +' + looksGain },
+    };
+  },
+
+  stillroom() {
+    // Domestic science — soap, preserves, medicines, cordials
+    var decorumGain = rand(1,3);
+    var faithGain   = rand(0,2);
+    if (typeof G.eduStats !== 'undefined' && G.eduStats && G.eduStats.decorum) {
+      G.eduStats.decorum.stillroom = Math.min(100, (G.eduStats.decorum.stillroom||0) + decorumGain);
+      if (typeof recalcEduTotals === 'function') recalcEduTotals();
+    }
+    changeStat('faith', faithGain);
+    // Small wealth gain from useful products
+    var produce = rand(1,4);
+    G.wealth = (G.wealth||0) + produce;
+    var activities = [
+      { text: 'You spend the morning making lavender soap. The stillroom smells extraordinary. You produce more than expected.', badge: 'Decorum +' + decorumGain + '  +£' + produce },
+      { text: 'A batch of rose water and a pot of elderflower cordial. The cordial is excellent. The rose water is better.', badge: 'Decorum +' + decorumGain + '  +£' + produce },
+      { text: 'You put up six jars of preserve from the kitchen garden. The colour is beautiful. You label them in your best hand.', badge: 'Decorum +' + decorumGain + '  +£' + produce },
+      { text: 'Tinctures and simples. The stillroom recipe book is three generations old. You add a note of your own.', badge: 'Decorum +' + decorumGain + '  Wit +1' },
+    ];
+    // Rare chance of preparing a fertility or health herb (married female)
+    if (G.isMarried && G.fertility !== undefined && Math.random() < 0.15) {
+      var herbGain = rand(2, 5);
+      G.fertility = Math.min(100, G.fertility + herbGain);
+      return {
+        log:   { text: 'A morning in the stillroom, including some preparations your mother recommended.', type: 'good' },
+        popup: {
+          text: 'You follow a recipe from your grandmother\'s stillroom book. Raspberry leaf, lady\'s mantle, and something she described only as "useful for wives." You are not entirely sure what it does. But it is an old recipe and old recipes are usually old for a reason.',
+          badge: 'Decorum +' + decorumGain + '  +£' + produce,
+        },
+      };
+    }
+    var chosen = pick(activities);
+    return {
+      log:   { text: 'A morning in the stillroom.', type: 'good' },
+      popup: { text: chosen.text, badge: chosen.badge },
+    };
+  },
+
 
 };
 
